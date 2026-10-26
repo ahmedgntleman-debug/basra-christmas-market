@@ -1,6 +1,6 @@
 // Public availability page. Talks to ONE database function (get_public_map) that
 // returns only kiosk codes, shapes and availability — never names, phones or money.
-import { sb, configured, $, h, fmtDate, waLink, normDigits, DEFAULT_COLORS } from './common.js';
+import { sb, configured, $, h, fmtDate, waLink, normDigits, DEFAULT_COLORS, statusBg } from './common.js';
 import { MapView } from './map.js';
 import { startI18n, isEn } from './i18n.js';
 
@@ -47,7 +47,7 @@ function legend() {
   const c = { ...DEFAULT_COLORS, ...(edition.colors || {}) };
   const n = s => data.kiosks.filter(k => k.status === s).length;
   $('#legend').replaceChildren(
-    ...['available', 'partial', 'reserved'].map(s => h('span', {}, h('i', { style: { background: c[s] } }), LEG[s], ' ', h('b', { class: 'num' }, n(s)))),
+    ...['available', 'partial', 'reserved'].map(s => h('span', {}, h('i', { style: { background: statusBg(s, c) } }), LEG[s], ' ', h('b', { class: 'num' }, n(s)))),
     h('span', {}, `${fmtDate(data.from)} – ${fmtDate(data.to)}`));
 }
 
@@ -70,7 +70,7 @@ function sheet() {
   host.replaceChildren(h('div', { class: 'sheet', role: 'dialog', 'aria-label': 'الكشك ' + k.code },
     h('div', { class: 'row' },
       h('span', { class: 'code' }, k.code),
-      h('span', { class: 'status-pill', style: { background: c[k.status] || '#888', color: '#fff', padding: '4px 12px', borderRadius: '999px', fontWeight: 600, fontSize: '13px' } }, LEG[k.status]),
+      h('span', { class: 'status-pill', style: { background: statusBg(k.status, c) || '#888', color: '#fff', padding: '4px 12px', borderRadius: '999px', fontWeight: 600, fontSize: '13px' } }, LEG[k.status]),
       h('button', { class: 'x', 'aria-label': 'إغلاق', onclick: () => { selected = null; mv.setSelected([]); sheet(); } }, '×')),
     h('p', { class: 'msg' }, TEXT[k.status](k.code)),
     open ? h('p', { class: 'hint', style: { fontSize: '14px' } }, `للاستفسار يرجى التواصل مع إدارة ${edition.name}.`) : null,

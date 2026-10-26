@@ -1,7 +1,7 @@
 // Reservations list, customers, reports, settings.
 import {
   sb, h, $, $$, toast, errText, money, fmtNum, fmtDate, fmtDateLong, fmtDateTime, todayISO, addDays, daysBetween,
-  computeStatuses, STATUS_LABEL, PAY_LABEL, RES_LABEL, ROLE_LABEL, DEFAULT_COLORS, badge, modal, confirmBox, exportRows, printHTML, esc,
+  computeStatuses, statusBg, STATUS_LABEL, PAY_LABEL, RES_LABEL, ROLE_LABEL, DEFAULT_COLORS, badge, modal, confirmBox, exportRows, printHTML, esc,
 } from './common.js';
 import { S, can, refresh, settings, colors, kioskById, codeSort, loadEditions, switchEdition, DEFAULT_CONTRACT } from './state.js';
 import { openBooking, openReservation, openPayment, openCustomer, field } from './booking.js';
@@ -238,7 +238,7 @@ function rAvailability(el) {
   };
   const draw = () => {
     const list = rows(), cnt = s => list.filter(r => r.s === s).length;
-    box.replaceChildren(h('div', { class: 'legend', style: { marginBottom: '10px' } }, ['available', 'partial', 'held', 'reserved', 'disabled'].map(s => h('span', {}, h('i', { style: { background: colors()[s] } }), `${STATUS_LABEL[s]}: ${cnt(s)}`))),
+    box.replaceChildren(h('div', { class: 'legend', style: { marginBottom: '10px' } }, ['available', 'partial', 'held', 'reserved', 'disabled'].map(s => h('span', {}, h('i', { style: { background: statusBg(s, colors()) } }), `${STATUS_LABEL[s]}: ${cnt(s)}`))),
       reportTable(list, cols));
   };
   el.replaceChildren(h('div', { class: 'pagebar' }, rng.el, exportBar(rows, cols, 'availability-' + S.edition.slug, 'توفر الأكشاك')), box);

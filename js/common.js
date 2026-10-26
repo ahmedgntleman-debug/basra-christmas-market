@@ -90,13 +90,18 @@ export function fmtDateTime(ts) {
 
 // ---------- labels ----------
 export const STATUS_LABEL = {
-  available: 'متوفر', reserved: 'محجوز', held: 'حجز مؤقت', partial: 'متوفر جزئياً', disabled: 'غير متاح',
+  available: 'متوفر', reserved: 'محجوز', held: 'حجز مؤقت', partial: 'محجوز جزئياً', disabled: 'غير متاح',
 };
 export const PAY_LABEL = {
   paid: 'مسدد بالكامل', partial: 'مسدد جزئياً', unpaid: 'غير مسدد', overdue: 'متأخر', not_priced: 'السعر غير محدد', cancelled: 'ملغى',
 };
 export const RES_LABEL = { confirmed: 'مؤكد', held: 'حجز مؤقت', cancelled: 'ملغى' };
 export const ROLE_LABEL = { super_admin: 'مدير عام', reservations: 'مدير الحجوزات', finance: 'المسؤول المالي', readonly: 'اطلاع فقط' };
+// background for a legend swatch / status pill; partly booked = green with red stripes (same as the map)
+export function statusBg(st, c) {
+  const col = { ...DEFAULT_COLORS, ...(c || {}) };
+  return st === 'partial' ? `repeating-linear-gradient(45deg, ${col.reserved} 0 4px, ${col.available} 4px 8px)` : col[st];
+}
 export const DEFAULT_COLORS = { available: '#2e8b57', reserved: '#c0392b', held: '#e67e22', partial: '#f1c40f', disabled: '#9e9e9e' };
 
 export function badge(kind, key, labels) {

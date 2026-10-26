@@ -1,7 +1,7 @@
 // Admin portal: shell, login, dashboard and the interactive map (with map editor).
 import {
   sb, configured, h, $, $$, toast, errText, money, fmtNum, fmtDate, fmtDateLong, todayISO, addDays, daysBetween,
-  computeStatuses, STATUS_LABEL, PAY_LABEL, ROLE_LABEL, badge, modal, confirmBox, parseAmount, fmtDateTime,
+  computeStatuses, statusBg, RES_LABEL, STATUS_LABEL, PAY_LABEL, ROLE_LABEL, badge, modal, confirmBox, parseAmount, fmtDateTime,
 } from './common.js';
 import { MapView } from './map.js';
 import { S, can, role, onChange, loadEditions, loadEditionData, refresh, switchEdition, subscribeLive, settings, colors, kioskById, kioskByCode, codeSort } from './state.js';
@@ -298,7 +298,7 @@ function pageMap(root) {
   function drawLegend(st) {
     const c = colors(), count = s => [...st.values()].filter(x => x === s).length;
     legend.replaceChildren(...['available', 'partial', 'held', 'reserved', 'disabled'].map(s =>
-      h('span', {}, h('i', { style: { background: c[s] } }), `${STATUS_LABEL[s]} (${count(s)})`)),
+      h('span', {}, h('i', { style: { background: statusBg(s, c) } }), `${STATUS_LABEL[s]} (${count(s)})`)),
       h('span', { class: 'hint' }, `الفترة: ${fmtDate(from)} – ${fmtDate(to)}`));
   }
   function applyFilter() {
@@ -370,7 +370,7 @@ function pageMap(root) {
     panel.replaceChildren(h('div', { class: 'pp' },
       h('div', { class: 'kh' },
         h('h2', { class: 'kufi code' }, k.code),
-        h('span', { class: 'status-pill', style: { background: colors()[s] } }, STATUS_LABEL[s])),
+        h('span', { class: 'status-pill', style: { background: statusBg(s, colors()) } }, STATUS_LABEL[s])),
       h('div', { class: 'hint' }, [k.grp && 'مجموعة ' + k.grp, k.category, k.zone].filter(Boolean).join(' · '),
         k.list_price != null ? h('div', {}, 'السعر الاسترشادي: ', h('span', { class: 'num' }, money(k.list_price))) : null),
       k.needs_verify ? h('p', { class: 'warnbox' }, 'رقم هذا الكشك بحاجة لتأكيد. ', k.note || '') : null,
@@ -379,11 +379,12 @@ function pageMap(root) {
         from: firstGap.s > from ? firstGap.s : (from >= firstGap.s && from <= firstGap.e ? from : firstGap.s),
         to: firstGap.e < to ? firstGap.e : to >= firstGap.s && to <= firstGap.e ? to : firstGap.e,
       }) }, 'حجز هذا الكشك') : null,
+      s === 'partial' ? h('p', { class: 'hint', style: { margin: 0 } }, 'محجوز لجزء من الفترة المعروضة فقط، وباقي الأيام متاحة للحجز.') : null,
       gaps.length && live.length ? h('div', { class: 'hint' }, 'أيام متوفرة: ', gaps.map(g => g.s === g.e ? fmtDate(g.s) : `${fmtDate(g.s)}–${fmtDate(g.e)}`).join('، ')) : null,
       !k.active || !k.rentable ? h('p', { class: 'hint' }, 'هذا الكشك غير متاح للإيجار.') : null,
       h('h3', {}, rs.length ? 'الحجوزات' : 'لا توجد حجوزات على هذا الكشك'),
       rs.map(r => h('article', { class: 'rescard' + (r.status === 'cancelled' ? ' off' : ''), onclick: () => openReservation(r.id), tabindex: 0, onkeydown: e => e.key === 'Enter' && openReservation(r.id) },
-        h('div', { class: 'rc-top' }, h('strong', {}, r.customer_name || 'حجز مؤقت'), badge('pay', r.pay_status, PAY_LABEL)),
+        h('div', { class: 'rc-top' }, h('strong', {}, r.customer_name || 'حجز مؤقت'), h('span', { style: { display: 'flex', gap: '4px' } }, badge('res', r.status, RES_LABEL), badge('pay', r.pay_status, PAY_LABEL))),
         h('div', { class: 'hint' }, `${fmtDate(r.start_date)} – ${fmtDate(r.end_date)} · ${r.days} يوماً`, r.kiosk_codes.length > 1 ? ` · مع ${r.kiosk_codes.filter(c => c !== k.code).join('، ')}` : ''),
         r.status === 'held' ? h('div', { class: 'hint', style: { color: '#a0520b' } }, 'حجز مؤقت' + (r.hold_until ? ' حتى ' + fmtDateTime(r.hold_until) : '')) : null,
         h('div', { class: 'rc-money' },

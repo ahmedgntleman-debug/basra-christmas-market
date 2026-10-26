@@ -22,7 +22,13 @@ export class MapView {
     this.img = s('image', { x: 0, y: 0, preserveAspectRatio: 'none' });
     this.gK = s('g');
     this.gEdit = s('g');
-    this.svg.append(this.img, this.gK, this.gEdit);
+    this.patId = 'bcm-part-' + Math.random().toString(36).slice(2, 8);
+    const defs = s('defs');
+    this.pat = s('pattern', { id: this.patId, patternUnits: 'userSpaceOnUse', width: 6, height: 6, patternTransform: 'rotate(45)' });
+    this.patBg = s('rect', { width: 6, height: 6 });
+    this.patFg = s('rect', { width: 3, height: 6 });
+    this.pat.append(this.patBg, this.patFg); defs.append(this.pat);
+    this.svg.append(defs, this.img, this.gK, this.gEdit);
     container.append(this.svg);
 
     const ctl = document.createElement('div');
@@ -98,11 +104,13 @@ export class MapView {
     g.append(shape, t, title);
   }
   paint() {
+    this.patBg.setAttribute('fill', this.colors.available || '#2e8b57');
+    this.patFg.setAttribute('fill', this.colors.reserved || '#c0392b');
     for (const g of this.gK.children) {
       const st = this.statuses.get(g.dataset.id) || 'available';
-      const col = this.colors[st] || '#888';
+      const col = st === 'partial' ? (this.colors.reserved || '#c0392b') : (this.colors[st] || '#888');
       const sh = g.querySelector('.shape');
-      sh.setAttribute('fill', col);
+      sh.setAttribute('fill', st === 'partial' ? `url(#${this.patId})` : col);
       sh.setAttribute('stroke', shade(col));
       g.dataset.status = st;
     }

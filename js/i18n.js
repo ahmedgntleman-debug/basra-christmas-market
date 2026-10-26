@@ -20,7 +20,7 @@ const D = {
   'مسدد بالكامل': 'Fully paid', 'مسدد جزئياً': 'Partly paid', 'غير مسدد': 'Unpaid', 'متأخر': 'Overdue', 'السعر غير محدد': 'Price not yet confirmed', 'ملغى': 'Cancelled', 'مؤكد': 'Confirmed',
   'مسدد': 'Paid', 'مستحق': 'Due', 'مؤقت': 'Temporary', 'غير محدد': 'Not set',
   // dashboard
-  'إجمالي الأكشاك': 'Total kiosks', 'محجوزة بالكامل': 'Fully reserved', 'محجوزة جزئياً': 'Partly reserved', 'متوفرة': 'Available', 'حجوزات مؤقتة': 'Temporary holds',
+  'إجمالي الأكشاك': 'Total kiosks', 'محجوزة بالكامل': 'Fully reserved', 'محجوزة جزئياً': 'Partly reserved', 'محجوز جزئياً': 'Partly booked', 'محجوز لجزء من الفترة المعروضة فقط، وباقي الأيام متاحة للحجز.': 'Booked for part of the shown period only; the other days are free to book.', 'متوفرة': 'Available', 'حجوزات مؤقتة': 'Temporary holds',
   'العملاء المشاركون': 'Participating customers', 'قيمة العقود': 'Contract value', 'المبالغ المحصلة': 'Collected', 'المبالغ المتبقية': 'Outstanding', 'دفعات متأخرة': 'Overdue payments',
   'حجوزات بلا سعر': 'Unpriced reservations', 'تخصيص البطاقات': 'Customize cards', 'البطاقات الظاهرة في الرئيسية': 'Cards shown on Home',
   'المهرجان قائم الآن': 'The festival is running', 'انتهت هذه النسخة': 'This edition has ended', 'يفتتح بعد': 'Opens in', 'من الأكشاك عليها حجز': 'of kiosks have a booking',
