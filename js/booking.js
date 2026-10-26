@@ -3,6 +3,7 @@ import {
   sb, h, $, $$, modal, toast, errText, confirmBox, parseAmount, money, fmtNum, fmtDate, fmtDateLong,
   todayISO, addDays, daysBetween, badge, PAY_LABEL, RES_LABEL, waLink, esc, fmtDateTime,
 } from './common.js';
+import { celebrate } from './festive.js';
 import { S, can, refresh, settings, kioskById, kioskByCode, customerById, codeSort, DEFAULT_CONTRACT, DEFAULT_SPONSOR_CONTRACT } from './state.js';
 
 export const DEAL_LABEL = { rental: 'إيجار كشك', sponsorship: 'رعاية' };
@@ -212,6 +213,7 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
 }
 
 function afterSave(resId, deal = 'rental') {
+  celebrate();
   const pref = settings().contract_prompt;
   if (pref === 'always') { toast('تم حفظ الحجز بنجاح'); return openContract(resId); }
   if (pref === 'never') return toast('تم حفظ الحجز بنجاح', { actions: [{ label: 'عرض الحجز', run: () => openReservation(resId) }] });
@@ -404,7 +406,7 @@ async function confirmHold(r, m) {
   if (!r.customer_id) { m.close(); toast('أضف اسم العميل أولاً ثم أكّد الحجز', { error: true }); return openEditReservation(r.id, { confirm: true }); }
   const { error } = await sb.from('reservations').update({ status: 'confirmed', hold_until: null }).eq('id', r.id);
   if (error) return toast(errText(error), { error: true });
-  m.close(); await refresh(); toast('تم تأكيد الحجز');
+  m.close(); await refresh(); celebrate(); toast('تم تأكيد الحجز');
 }
 
 async function cancelRes(r, m) {
@@ -549,6 +551,7 @@ export function openPayment(resId) {
     if (error) return toast(errText(error), { error: true });
     m.close(); await refresh();
     const now = S.reservations.find(x => x.id === target.id);
+    if (kind !== 'refund') celebrate();
     toast(`تم تسجيل ${kind === 'refund' ? 'الاسترجاع' : 'الدفعة'}. المتبقي الآن: ${money(now?.remaining)}`, { actions: [{ label: 'عرض الحجز', run: () => openReservation(target.id) }] });
   };
 }
@@ -602,21 +605,28 @@ export function openContract(resId, { body } = {}) {
   const text = body || fillTemplate(sponsor ? (settings().sponsor_template || DEFAULT_SPONSOR_CONTRACT) : (settings().contract_template || DEFAULT_CONTRACT), r);
   const w = window.open('', '_blank');
   if (!w) return toast('اسمح بالنوافذ المنبثقة لهذا الموقع لتتمكن من فتح العقد', { error: true });
-  const logo = S.edition?.settings?.logo_url;
-  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>عقد ${esc(r.kiosk_codes.join('-'))} — ${esc(r.customer_name || '')}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;600&family=Reem+Kufi:wght@600&display=swap">
-<style>@page{size:A4;margin:18mm}body{font-family:"Readex Pro",Tahoma,sans-serif;color:#111;max-width:760px;margin:24px auto;padding:0 16px;font-size:15px;line-height:1.9}
-.bar{position:sticky;top:0;background:#12372a;color:#fff;padding:10px 14px;border-radius:10px;display:flex;gap:8px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
-.bar button{font:inherit;border:0;border-radius:6px;padding:8px 14px;cursor:pointer}.bar .p{background:#b8913a;color:#1b1404;font-weight:600}
+  const logo = S.edition?.settings?.logo_url || new URL('img/logo-static.svg', location.href).href;
+  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(contractName(r.deal_type))} ${esc(r.kiosk_codes.join('-'))} — ${esc(r.customer_name || '')}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lalezar&family=Readex+Pro:wght@400;600&display=swap">
+<style>@page{size:A4;margin:14mm 16mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:"Readex Pro",Tahoma,sans-serif;color:#1d2420;max-width:780px;margin:24px auto;padding:0 16px;font-size:15px;line-height:1.9;background:#f4efe6}
+.bar{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#16402a,#1f5236);color:#fff;padding:10px 14px;border-radius:14px;display:flex;gap:8px;align-items:center;margin-bottom:20px;flex-wrap:wrap;box-shadow:0 8px 24px rgba(0,0,0,.15)}
+.bar button{font:inherit;border:0;border-radius:10px;padding:8px 14px;cursor:pointer}.bar .p{background:linear-gradient(180deg,#d8333a,#a81d25);color:#fff;font-weight:600}
 .bar span{font-size:13px;opacity:.85;margin-inline-start:auto}
-.head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #12372a;padding-bottom:10px;margin-bottom:18px}
-.head img{height:60px}.head h1{font-family:"Reem Kufi",serif;font-size:22px;margin:0;color:#12372a}
-#doc{white-space:pre-wrap;outline:none;min-height:400px}#doc:focus{background:#fffdf3}
-@media print{.bar{display:none}body{margin:0}}</style></head><body>
+.sheet{background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.12);padding:0 34px 26px;position:relative;overflow:hidden}
+.ribbon{height:9px;margin:0 -34px 18px;background:repeating-linear-gradient(-45deg,#b3212a 0 9px,#fff 9px 14px,#2f6b45 14px 23px,#fff 23px 28px)}
+.head{display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:2px solid #b3212a;padding-bottom:12px;margin-bottom:18px}
+.head img{height:92px;width:auto}.head .t{text-align:start}.head h1{font-family:Lalezar,"Readex Pro",serif;font-weight:400;font-size:26px;margin:0;color:#16402a;line-height:1.2}
+.head .t small{display:block;color:#8a6d4d;font-size:13px}
+.foot{margin-top:26px;padding-top:10px;border-top:1px dashed #d4a73c;display:flex;justify-content:space-between;font-size:12px;color:#8a6d4d}
+#doc{white-space:pre-wrap;outline:none;min-height:400px}#doc:focus{background:#fffbf1}
+@media print{.bar{display:none}body{margin:0;background:#fff;max-width:none;padding:0}.sheet{box-shadow:none;padding:0 4px}.ribbon{margin:0 0 16px}}</style></head><body>
 <div class="bar"><button class="p" onclick="print()">طباعة</button><button onclick="print()">حفظ PDF</button>${can.pay() ? '<button id="sv" onclick="bcmSave(document.getElementById(\'doc\').innerText)">حفظ في سجل العميل</button>' : ''}<button onclick="close()">ليس الآن</button>
 <span>يمكنك تعديل نص العقد مباشرة قبل الطباعة. لحفظه PDF اختر «Save as PDF» في نافذة الطباعة.</span></div>
-<div class="head">${logo ? `<img src="${esc(logo)}" alt="">` : ''}<h1>${esc(S.edition?.name || '')}</h1></div>
-<div id="doc" contenteditable="true">${esc(text)}</div></body></html>`);
+<div class="sheet"><div class="ribbon"></div>
+<div class="head"><div class="t"><h1>${esc(contractName(r.deal_type))}</h1><small>${esc(S.edition?.name || '')} · ${esc(fmtDateLong(S.edition?.start_date))} — ${esc(fmtDateLong(S.edition?.end_date))}</small><small>الكشك: ${esc(r.kiosk_codes.join('، '))}</small></div><img src="${esc(logo)}" alt="Market Christmas"></div>
+<div id="doc" contenteditable="true">${esc(text)}</div>
+<div class="foot"><span>Market Christmas — Santa\'s Factory · ${esc(S.edition?.name || '')}</span><span>✦ عيد ميلاد مجيد وعام سعيد ✦</span></div></div></body></html>`);
   w.document.close();
   w.bcmSave = async txt => {
     const btn = w.document.getElementById('sv');

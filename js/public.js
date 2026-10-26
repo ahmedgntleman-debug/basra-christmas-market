@@ -3,6 +3,7 @@
 import { sb, configured, $, h, fmtDate, waLink, normDigits, DEFAULT_COLORS, statusBg } from './common.js';
 import { MapView } from './map.js';
 import { startI18n, isEn } from './i18n.js';
+import { initFestive, garland, sleigh, countdown, toggleButton, jingle, burst } from './festive.js';
 
 const slug = new URLSearchParams(location.search).get('e') || (window.BCM_CONFIG?.DEFAULT_EDITION || 'bcm-2026');
 const fromI = $('#from'), toI = $('#to'), q = $('#q');
@@ -30,6 +31,7 @@ async function load(first) {
     fromI.max = toI.max = addDaysISO(edition.end_date, 30);
     mv = new MapView($('#map'), { onSelect: k => { selected = k.code; sheet(); }, onBackground: () => { selected = null; sheet(); } });
     mv.setMap(edition.map_url, edition.map_w, edition.map_h);
+    $('#count-host').replaceWith(countdown(edition.start_date, edition.end_date));
   }
   const kiosks = d.kiosks.map(k => ({ ...k, id: k.code, needs_verify: false }));
   mv.setColors({ ...DEFAULT_COLORS, ...(edition.colors || {}) });
@@ -108,6 +110,11 @@ q.oninput = filter;
 q.onkeydown = e => { if (e.key === 'Enter') { const s = normDigits(q.value).trim().toUpperCase().replace(/\s+/g, ''); if (data.kiosks.some(k => k.code === s)) { selected = s; sheet(); mv.focus(s); } } };
 
 startI18n();
+initFestive({ density: 70 });
+garland($('.pub-top'));
+sleigh($('.pub-top'));
+$('#pub-tools').prepend(toggleButton());
+$('#pub-logo').onclick = e => { jingle(); burst(e.clientX, e.clientY, 18); };
 load(true);
 setInterval(() => { if (!document.hidden) load(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && data) load(); });

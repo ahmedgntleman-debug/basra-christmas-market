@@ -8,6 +8,11 @@ export function setLang(l) { try { localStorage.setItem('bcm.lang', l); } catch 
 export const isEn = () => LANG === 'en';
 
 const D = {
+  // festive layer
+  'إدارة الأكشاك': 'Kiosk management', 'يفتتح المهرجان بعد': 'The festival opens in', 'يوم': 'days', 'ساعة': 'hours', 'دقيقة': 'min', 'ثانية': 'sec',
+  '❄ الزينة: تعمل': '❄ Decorations: on', '❄ الزينة: متوقفة': '❄ Decorations: off', 'زينة': 'Ornament', 'هو هو هو! 🎅': 'Ho ho ho! 🎅',
+  'شجرة الميلاد — اضغط لإضاءتها': 'Christmas tree — tap to light it', 'زلاجة بابا نويل': 'Santa’s sleigh', 'شكراً لكم — نلقاكم في الموسم القادم ✨': 'Thank you — see you next season ✨',
+  'عقد الإيجار': 'Rental contract', 'عقد الرعاية': 'Sponsorship contract', 'عيد ميلاد مجيد وعام سعيد': 'Merry Christmas and a Happy New Year',
   // shell & navigation
   'سوق البصرة لعيد الميلاد': 'Basra Christmas Market', 'سوق البصرة': 'Basra', 'لعيد الميلاد': 'Christmas Market',
   'الرئيسية': 'Home', 'الخريطة': 'Map', 'الحجوزات': 'Reservations', 'العملاء': 'Customers', 'التقارير': 'Reports', 'الإعدادات': 'Settings',
@@ -188,6 +193,7 @@ const P = [
   [/^الكشك رقم (\S+) محجوز خلال الفترة المحددة\.$/, 'Kiosk $1 is reserved during the selected period.'],
   [/^الكشك رقم (\S+) غير متاح للإيجار\.$/, 'Kiosk $1 is not offered for rent.'],
   [/^يفتتح بعد (\d+) يوماً$/, 'Opens in $1 days'],
+  [/^🎄 المهرجان قائم الآن — اليوم (\d+) من (\d+)$/, '🎄 The festival is on — day $1 of $2'],
   [/^(\d+) كشك بحاجة لتأكيد الرقم: (.*)$/, '$1 kiosk(s) need number verification: $2'],
   [/^(\d+) أكشاك محددة$/, '$1 kiosks selected'],
   [/^(\d+) من (\d+)$/, '$1 of $2'],

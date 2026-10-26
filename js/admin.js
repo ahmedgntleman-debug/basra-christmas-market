@@ -9,6 +9,7 @@ import { openBooking, openReservation, openPayment, openReminder, openCustomer, 
 import { pageReservations, pageCustomers, pageReports, pageSettings, openDailyEntry } from './pages.js';
 import { openAssistant, assistantReady } from './assistant.js';
 import { startI18n } from './i18n.js';
+import { initFestive, garland, baubles, countdown, tree, toggleButton, burst, jingle } from './festive.js';
 
 const view = () => $('#view');
 const ROUTES = {
@@ -44,6 +45,7 @@ async function boot() {
   }
   $('#login').hidden = true;
   $('#app').hidden = false;
+  initFestive({ density: 34 });
   shell();
   subscribeLive();
   onChange(() => render(false));
@@ -60,6 +62,10 @@ function showSetupNeeded() {
 function showLogin() {
   $('#login').hidden = false;
   $('#app').hidden = true;
+  initFestive({ density: 90 });
+  if (!$('#login .fx-baubles')) baubles($('#login'), [
+    { x: '8%', len: 70, size: 54 }, { x: '18%', len: 130, size: 42, style: 1 }, { x: '30%', len: 40, size: 34, style: 2 },
+    { x: '68%', len: 56, size: 38, style: 3 }, { x: '80%', len: 140, size: 56, style: 4 }, { x: '91%', len: 80, size: 40, style: 1 }]);
   const form = $('#login-form');
   form.onsubmit = async e => {
     e.preventDefault();
@@ -73,6 +79,9 @@ function showLogin() {
 }
 
 function shell() {
+  garland($('.top'));
+  $('.nav .foot').prepend(toggleButton());
+  const nl = $('#nav-logo'); if (nl) nl.onclick = e => { jingle(); burst(e.clientX, e.clientY, 16); };
   $('#who').textContent = (S.profile.full_name || S.user.email) + ' — ' + ROLE_LABEL[S.profile.role];
   $('#logout').onclick = async () => { await sb.auth.signOut(); location.hash = ''; location.reload(); };
   const sel = $('#edition');
@@ -162,12 +171,20 @@ function pageDashboard(root) {
     assistantReady() ? h('button', { class: 'btn pine', onclick: openAssistant }, 'المساعد الذكي') : null,
     h('button', { class: 'btn ghost', onclick: customizeCards }, 'تخصيص البطاقات'));
 
+  const pct = s.kiosks ? Math.round(100 * (s.reserved + s.partial) / s.kiosks) : 0;
   const banner = h('section', { class: 'hero' },
-    h('div', {}, h('h1', { class: 'kufi' }, E.name),
+    h('div', { class: 'hero-main' },
+      h('img', { class: 'hero-logo', src: 'img/logo-dark.svg', alt: 'Market Christmas' }),
+      h('h1', {}, E.name),
       h('p', {}, `${fmtDateLong(E.start_date)} — ${fmtDateLong(E.end_date)} · ${daysBetween(E.start_date, E.end_date)} يوماً`)),
-    h('div', { class: 'hero-side' }, h('div', { class: 'phase' }, phase),
-      h('div', { class: 'occ' }, h('span', { class: 'num' }, s.kiosks ? Math.round(100 * (s.reserved + s.partial) / s.kiosks) + '%' : '—'), ' من الأكشاك عليها حجز')));
-
+    tree(104),
+    h('div', { class: 'hero-side' },
+      countdown(E.start_date, E.end_date),
+      h('div', { class: 'occ-row' },
+        h('div', { class: 'occ-ring', style: { '--p': pct } }, h('b', { class: 'num' }, s.kiosks ? pct + '%' : '—')),
+        h('span', {}, 'من الأكشاك عليها حجز'))));
+  baubles(banner, [{ x: '6%', len: 26, size: 34 }, { x: '13%', len: 52, size: 26, style: 1 }, { x: '58%', len: 18, size: 24, style: 2 }, { x: '72%', len: 40, size: 30, style: 3 }, { x: '90%', len: 22, size: 28, style: 4 }]);
+  void phase;
   root.replaceChildren(...[
     banner, quick,
     h('section', { class: 'stats' }, CARD_DEFS.filter(c => !hidden.includes(c[0])).map(card)),
