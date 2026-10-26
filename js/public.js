@@ -74,11 +74,25 @@ function sheet() {
       h('button', { class: 'x', 'aria-label': 'إغلاق', onclick: () => { selected = null; mv.setSelected([]); sheet(); } }, '×')),
     h('p', { class: 'msg' }, TEXT[k.status](k.code)),
     open ? h('p', { class: 'hint', style: { fontSize: '14px' } }, `للاستفسار يرجى التواصل مع إدارة ${edition.name}.`) : null,
-    open && (edition.contact_phone || edition.contact_whatsapp) ? h('div', { class: 'acts' },
-      edition.contact_phone ? h('a', { class: 'btn pine', href: 'tel:' + edition.contact_phone.replace(/\s/g, '') }, 'اتصال الآن') : null,
-      edition.contact_whatsapp || edition.contact_phone ? h('a', { class: 'btn wa', href: waLink(edition.contact_whatsapp || edition.contact_phone, msg), target: '_blank', rel: 'noopener' }, 'استفسار عبر واتساب') : null)
-      : null));
+    open ? contactsBlock(msg) : null));
   mv.setSelected([k.code]);
+}
+
+function contactsBlock(msg) {
+  let list = (edition.contacts || []).filter(c => c && c.phone);
+  if (!list.length && (edition.contact_phone || edition.contact_whatsapp)) list = [{ name: '', phone: edition.contact_whatsapp || edition.contact_phone }];
+  if (!list.length) return null;
+  const tel = p => 'tel:' + normDigits(p).replace(/[^\d+]/g, '');
+  if (list.length === 1 && !list[0].name) {
+    const c = list[0];
+    return h('div', { class: 'acts' },
+      h('a', { class: 'btn pine', href: tel(c.phone) }, 'اتصال الآن'),
+      h('a', { class: 'btn wa', href: waLink(c.phone, msg), target: '_blank', rel: 'noopener' }, 'استفسار عبر واتساب'));
+  }
+  return h('div', { class: 'contacts' }, list.map(c => h('div', { class: 'contact' },
+    h('div', { class: 'who', 'data-raw': '' }, h('strong', {}, c.name || c.phone), c.name ? h('span', { class: 'num' }, c.phone) : null),
+    h('a', { class: 'btn pine small', href: tel(c.phone), 'aria-label': 'اتصال ' + (c.name || c.phone) }, 'اتصال'),
+    h('a', { class: 'btn wa small', href: waLink(c.phone, msg), target: '_blank', rel: 'noopener', 'aria-label': 'واتساب ' + (c.name || c.phone) }, 'واتساب'))));
 }
 
 function closed(text) {

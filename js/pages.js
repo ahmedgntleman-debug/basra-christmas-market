@@ -314,9 +314,22 @@ export function pageSettings(root) {
     slug: h('input', { class: 'in', value: E.slug, disabled: dis, dir: 'ltr' }),
     start_date: h('input', { class: 'in', type: 'date', value: E.start_date, disabled: dis }),
     end_date: h('input', { class: 'in', type: 'date', value: E.end_date, disabled: dis }),
-    contact_phone: h('input', { class: 'in', value: E.contact_phone || '', disabled: dis, inputmode: 'tel', placeholder: '07xx xxx xxxx' }),
-    contact_whatsapp: h('input', { class: 'in', value: E.contact_whatsapp || '', disabled: dis, inputmode: 'tel', placeholder: '07xx xxx xxxx' }),
   };
+  // inquiry contacts shown on the public page (each with call + WhatsApp)
+  const contactRows = [];
+  const contactList = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } });
+  const addContact = (name = '', phone = '') => {
+    const n = h('input', { class: 'in', value: name, disabled: dis, placeholder: 'الاسم، مثل Mr. Samer' });
+    const p = h('input', { class: 'in', value: phone, disabled: dis, inputmode: 'tel', dir: 'ltr', placeholder: '07xx xxx xxxx' });
+    const st = { n, p };
+    const row = h('div', { class: 'grid3', style: { alignItems: 'center' } }, n, p,
+      dis ? h('span') : h('button', { type: 'button', class: 'btn small danger', style: { justifySelf: 'start' }, onclick: () => { row.remove(); contactRows.splice(contactRows.indexOf(st), 1); } }, 'حذف'));
+    contactRows.push(st); contactList.append(row);
+  };
+  const initialContacts = (E.contacts && E.contacts.length) ? E.contacts
+    : (E.contact_phone || E.contact_whatsapp) ? [{ name: '', phone: E.contact_whatsapp || E.contact_phone }] : [];
+  initialContacts.forEach(c => addContact(c.name, c.phone));
+  if (!initialContacts.length) addContact();
   const pub = h('input', { type: 'checkbox', checked: E.public_enabled, disabled: dis });
   const arch = h('input', { type: 'checkbox', checked: E.archived, disabled: dis });
   const publicUrl = () => new URL('public.html?e=' + encodeURIComponent(E.slug), location.href).href;
@@ -326,6 +339,16 @@ export function pageSettings(root) {
     h('a', { class: 'btn small wa', href: 'https://wa.me/?text=' + encodeURIComponent(`خريطة الأكشاك المتوفرة للحجز — ${E.name}\n${publicUrl()}`), target: '_blank', rel: 'noopener' }, 'مشاركة عبر واتساب'));
   const saveInfo = admin ? h('button', { class: 'btn primary', onclick: async () => {
     const patch = Object.fromEntries(Object.entries(I).map(([k, v]) => [k, v.value.trim() || null]));
+    const contacts = [];
+    for (const r of contactRows) {
+      const name = r.n.value.trim(), phone = r.p.value.trim();
+      if (!name && !phone) continue;
+      if (!phone) return toast('أضف رقم الهاتف لكل جهة اتصال', { error: true });
+      contacts.push({ name, phone });
+    }
+    patch.contacts = contacts;
+    patch.contact_phone = contacts[0]?.phone || null;
+    patch.contact_whatsapp = contacts[0]?.phone || null;
     if (!patch.name || !patch.slug || !patch.start_date || !patch.end_date) return toast('الاسم والرابط والتواريخ مطلوبة', { error: true });
     if (!/^[a-z0-9-]+$/.test(patch.slug)) return toast('الرابط المختصر: أحرف إنجليزية صغيرة وأرقام وشرطة فقط', { error: true });
     if (patch.end_date < patch.start_date) return toast('تاريخ النهاية قبل البداية', { error: true });
@@ -381,8 +404,12 @@ export function pageSettings(root) {
   const children = [
     sec('بيانات النسخة',
       h('div', { class: 'grid2' }, field('اسم النسخة', I.name), field('الرابط المختصر (للصفحة العامة)', I.slug),
-        field('تاريخ الافتتاح', I.start_date), field('تاريخ الختام', I.end_date),
-        field('رقم الاتصال للاستفسار', I.contact_phone), field('رقم واتساب للاستفسار', I.contact_whatsapp)),
+        field('تاريخ الافتتاح', I.start_date), field('تاريخ الختام', I.end_date)),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+        h('strong', { style: { fontSize: '14px' } }, 'أرقام الاستفسار في الصفحة العامة'),
+        h('span', { class: 'hint' }, 'يظهر لكل شخص زر اتصال وزر واتساب عند الضغط على كشك متوفر.'),
+        contactList,
+        dis ? null : h('button', { type: 'button', class: 'btn small', style: { alignSelf: 'flex-start' }, onclick: () => addContact() }, 'إضافة رقم')),
       h('label', { class: 'check' }, pub, 'الصفحة العامة مفعّلة'),
       h('label', { class: 'check' }, arch, 'نسخة مؤرشفة (منتهية)'),
       saveInfo ? h('div', {}, saveInfo) : null),

@@ -71,11 +71,14 @@ create table if not exists public.editions (
   contact_whatsapp text,
   colors           jsonb not null default
     '{"available":"#2e8b57","reserved":"#c0392b","held":"#e67e22","partial":"#f1c40f","disabled":"#9e9e9e"}',
+  contacts         jsonb not null default '[]',   -- public inquiry contacts: [{"name": "...", "phone": "07..."}]
   settings         jsonb not null default '{}',   -- feature toggles, contract template (staff only)
   archived         boolean not null default false,
   created_at       timestamptz not null default now(),
   check (end_date >= start_date)
 );
+
+alter table public.editions add column if not exists contacts jsonb not null default '[]';
 
 -- ---------------------------------------------------------------------
 -- Kiosks (geometry is relative to the map image: cx,cy,w,h in 0..1, rot in degrees)
@@ -506,7 +509,7 @@ begin
   select jsonb_build_object(
     'edition', jsonb_build_object('name', e.name, 'slug', e.slug, 'start_date', e.start_date,
                'end_date', e.end_date, 'map_url', e.map_url, 'map_w', e.map_w, 'map_h', e.map_h,
-               'contact_phone', e.contact_phone, 'contact_whatsapp', e.contact_whatsapp, 'colors', e.colors),
+               'contact_phone', e.contact_phone, 'contact_whatsapp', e.contact_whatsapp, 'contacts', e.contacts, 'colors', e.colors),
     'from', v_from, 'to', v_to,
     'kiosks', coalesce(jsonb_agg(jsonb_build_object(
         'code', k.code, 'grp', k.grp, 'geom', k.geom, 'shape', k.shape,
@@ -539,11 +542,11 @@ begin
   end if;
   select * into s from editions where id = p_source;
   insert into editions(slug, name, start_date, end_date, map_url, map_w, map_h,
-                       contact_phone, contact_whatsapp, colors)
+                       contact_phone, contact_whatsapp, contacts, colors)
   values (p->>'slug', p->>'name', (p->>'start_date')::date, (p->>'end_date')::date,
           case when coalesce((p->>'copy_map')::boolean, true) then s.map_url else 'map.jpg' end,
           s.map_w, s.map_h,
-          s.contact_phone, s.contact_whatsapp,
+          s.contact_phone, s.contact_whatsapp, s.contacts,
           case when coalesce((p->>'copy_branding')::boolean, true) then s.colors
                else '{"available":"#2e8b57","reserved":"#c0392b","held":"#e67e22","partial":"#f1c40f","disabled":"#9e9e9e"}'::jsonb end)
   returning id into v_new;
