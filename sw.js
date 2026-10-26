@@ -1,7 +1,7 @@
 // Caches the app shell so it opens fast. Data always comes live from the database (never cached).
-const CACHE = 'bcm-shell-v4';
+const CACHE = 'bcm-shell-v5';
 const SHELL = ['./', 'index.html', 'public.html', 'css/app.css', 'css/admin.css', 'js/common.js', 'js/map.js', 'js/state.js',
-  'js/booking.js', 'js/pages.js', 'js/admin.js', 'js/public.js', 'js/assistant.js', 'js/i18n.js', 'vendor/supabase.js', 'vendor/xlsx.min.js', 'map.jpg', 'icon.svg'];
+  'js/booking.js', 'js/pages.js', 'js/admin.js', 'js/public.js', 'js/assistant.js', 'js/i18n.js', 'vendor/supabase.js', 'vendor/xlsx.min.js', 'map-v2.jpg', 'icon.svg'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {

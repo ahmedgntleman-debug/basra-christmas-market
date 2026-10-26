@@ -63,7 +63,7 @@ export class MapView {
   setKiosks(list) { this.kiosks = list; this.render(); }
   setStatuses(map) { this.statuses = map; this.paint(); }
   setColors(c) { this.colors = c || {}; this.paint(); }
-  setMode(m) { this.mode = m; this.svg.style.cursor = m === 'add' ? 'crosshair' : ''; this.drawEditHandles(); }
+  setMode(m) { this.mode = m; this.svg.style.cursor = m === 'add' || m === 'draw' ? 'crosshair' : ''; this.drawEditHandles(); }
   setSelected(ids) { this.selected = new Set(ids || []); this.paintSel(); this.drawEditHandles(); }
   setHighlight(ids) {
     const set = ids ? new Set(ids) : null;
@@ -138,7 +138,7 @@ export class MapView {
       const p = this.px(k), r = Math.max(p.w, p.h) / 2;
       x0 = Math.min(x0, p.cx - r); y0 = Math.min(y0, p.cy - r); x1 = Math.max(x1, p.cx + r); y1 = Math.max(y1, p.cy + r);
     }
-    const pad = ids ? 70 : 30;
+    const pad = ids ? Math.max(this.W, this.H) * 0.045 : Math.max(this.W, this.H) * 0.02;
     this.vb = { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
     this.applyVB();
   }
@@ -166,6 +166,12 @@ export class MapView {
     this.moved = 0;
     if (this.pointers.size === 2) { this.drag = { type: 'pinch', d: this.pinchDist(), vb: { ...this.vb } }; return; }
     const p = this.pt(e);
+    if (this.mode === 'draw') {
+      this.drag = { type: 'draw', start: p };
+      this.drawRect = s('rect', { class: 'drawrect', x: p.x, y: p.y, width: 0, height: 0 });
+      this.gEdit.append(this.drawRect);
+      return;
+    }
     if (this.mode === 'edit' && handle) {
       const k = this.kiosks.find(x => x.id === handle.dataset.id);
       this.drag = { type: handle.dataset.handle, k, start: p, g0: { ...k.geom } };
@@ -200,6 +206,13 @@ export class MapView {
       this.svg.setAttribute('viewBox', `${this.vb.x} ${this.vb.y} ${this.vb.w} ${this.vb.h}`);
       return;
     }
+    if (d.type === 'draw') {
+      const p = this.pt(e);
+      const x = Math.min(p.x, d.start.x), y = Math.min(p.y, d.start.y);
+      this.drawRect.setAttribute('x', x); this.drawRect.setAttribute('y', y);
+      this.drawRect.setAttribute('width', Math.abs(p.x - d.start.x)); this.drawRect.setAttribute('height', Math.abs(p.y - d.start.y));
+      return;
+    }
     const p = this.pt(e), k = d.k, g = k.geom;
     if (d.type === 'move') {
       g.cx = d.g0.cx + (p.x - d.start.x) / this.W;
@@ -227,6 +240,15 @@ export class MapView {
     this.svg.classList.remove('panning');
     if (this.pointers.size) { if (d?.type === 'pinch') this.drag = null; return; }
     this.drag = null;
+    if (d?.type === 'draw') {
+      const p = this.pt(e);
+      this.drawRect?.remove(); this.drawRect = null;
+      if (cancelled) return;
+      const w = Math.abs(p.x - d.start.x), h = Math.abs(p.y - d.start.y);
+      if (w < 6 || h < 6) return;
+      this.opts.onDraw?.({ cx: (p.x + d.start.x) / 2 / this.W, cy: (p.y + d.start.y) / 2 / this.H, w: w / this.W, h: h / this.H, rot: 0 });
+      return;
+    }
     if (!d || cancelled) return;
     if ((d.type === 'move' || d.type === 'size' || d.type === 'rot') && this.moved > 2) {
       this.opts.onGeom?.(d.k, { ...d.k.geom });

@@ -6,7 +6,7 @@ import {
 import { MapView } from './map.js';
 import { S, can, role, onChange, loadEditions, loadEditionData, refresh, switchEdition, subscribeLive, settings, colors, kioskById, kioskByCode, codeSort } from './state.js';
 import { openBooking, openReservation, openPayment, openReminder, openCustomer, field } from './booking.js';
-import { pageReservations, pageCustomers, pageReports, pageSettings } from './pages.js';
+import { pageReservations, pageCustomers, pageReports, pageSettings, openDailyEntry } from './pages.js';
 import { openAssistant, assistantReady } from './assistant.js';
 import { startI18n } from './i18n.js';
 
@@ -114,6 +114,7 @@ const CARD_DEFS = [
   ['kiosks', 'إجمالي الأكشاك'], ['reserved', 'محجوزة بالكامل'], ['partial', 'محجوزة جزئياً'], ['available', 'متوفرة'],
   ['held', 'حجوزات مؤقتة'], ['customers', 'العملاء المشاركون'], ['contract', 'قيمة العقود'], ['collected', 'المبالغ المحصلة'],
   ['outstanding', 'المبالغ المتبقية'], ['overdue', 'دفعات متأخرة'], ['unpriced', 'حجوزات بلا سعر'],
+  ['visitors', 'إجمالي الزوار'], ['dailyIncome', 'إيراد المهرجان اليومي (المجموع)'],
 ];
 function hiddenCards() { try { return JSON.parse(localStorage.getItem('bcm.hiddenCards') || '[]'); } catch { return []; } }
 
@@ -133,6 +134,8 @@ function stats() {
     outstanding: sum(live, r => Math.max(0, r.remaining || 0)),
     overdue: live.filter(r => r.pay_status === 'overdue').length,
     unpriced: live.filter(r => r.pay_status === 'not_priced').length,
+    visitors: S.daily.reduce((a, d) => a + (d.visitors || 0), 0),
+    dailyIncome: S.daily.reduce((a, d) => a + (d.income || 0), 0),
     live,
   };
 }
@@ -144,7 +147,7 @@ function pageDashboard(root) {
   const until = daysBetween(today, E.start_date) - 1;
   const phase = until > 0 ? `يفتتح بعد ${until} يوماً` : today <= E.end_date ? 'المهرجان قائم الآن' : 'انتهت هذه النسخة';
   const fmt = {
-    contract: v => money(v), collected: v => money(v), outstanding: v => money(v),
+    contract: v => money(v), collected: v => money(v), outstanding: v => money(v), dailyIncome: v => money(v),
   };
   const card = ([key, label]) => h('div', { class: 'stat' + (key === 'overdue' && s.overdue ? ' alert' : '') },
     h('div', { class: 'stat-l' }, label),
@@ -155,6 +158,7 @@ function pageDashboard(root) {
     h('a', { class: 'btn', href: '#/map' }, 'الخريطة'),
     h('a', { class: 'btn', href: '#/customers' }, 'العملاء'),
     h('a', { class: 'btn', href: '#/reports' }, 'التقارير'),
+    can.daily() ? h('button', { class: 'btn', onclick: () => openDailyEntry(todayISO() >= E.start_date && todayISO() <= E.end_date ? todayISO() : E.start_date) }, 'تسجيل يومية') : null,
     assistantReady() ? h('button', { class: 'btn pine', onclick: openAssistant }, 'المساعد الذكي') : null,
     h('button', { class: 'btn ghost', onclick: customizeCards }, 'تخصيص البطاقات'));
 
@@ -260,6 +264,8 @@ function pageMap(root) {
   const grpSel = h('select', { class: 'in', 'aria-label': 'المجموعة' }, h('option', { value: '' }, 'كل المجموعات'), groups.map(g => h('option', { value: g }, 'أكشاك ' + g)));
   const multiBtn = h('button', { class: 'btn', 'aria-pressed': 'false' }, 'تحديد عدة أكشاك');
   const editBtn = can.admin() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, 'تحرير الخريطة') : null;
+  const areaBtn = can.book() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, 'حجز مساحة') : null;
+  const exportBtn = h('button', { class: 'btn' }, 'تصدير الخريطة');
   const legend = h('div', { class: 'legend' });
   const panel = h('aside', { class: 'mappanel' });
   const box = h('div', { class: 'mapbox' });
@@ -279,6 +285,7 @@ function pageMap(root) {
       drawPanel();
     },
     onAddAt: (cx, cy) => addKioskAt(cx, cy),
+    onDraw: geom => createArea(geom),
   });
   mv.setMap(E.map_url, E.map_w, E.map_h);
   mv.setColors(colors());
@@ -287,8 +294,9 @@ function pageMap(root) {
     h('div', { class: 'range' }, fromI, h('span', { class: 'hint' }, 'إلى'), toI,
       h('button', { class: 'btn small ghost', onclick: () => { fromI.value = E.start_date; toI.value = E.end_date; upd(); } }, 'كامل المهرجان'),
       h('button', { class: 'btn small ghost', onclick: () => { const t = todayISO(); fromI.value = t; toI.value = t; upd(); } }, 'اليوم')),
-    search, grpSel, multiBtn, editBtn);
-  root.replaceChildren(h('div', { class: 'mappage' }, toolbar, legend, h('div', { class: 'mapsplit' }, box, panel)));
+    search, grpSel, multiBtn, areaBtn, exportBtn, editBtn);
+  const areaHint = h('div', { class: 'warnbox', hidden: true }, 'اسحب بالماوس أو بإصبعك على الخريطة لرسم المساحة المطلوب تأجيرها. للتحريك أثناء الرسم أوقف «حجز مساحة» مؤقتاً.');
+  root.replaceChildren(h('div', { class: 'mappage' }, toolbar, areaHint, legend, h('div', { class: 'mapsplit' }, box, panel)));
 
   function statuses() {
     from = fromI.value || E.start_date; to = toI.value || E.end_date;
@@ -332,6 +340,38 @@ function pageMap(root) {
   };
   grpSel.onchange = () => { grp = grpSel.value; const ids = applyFilter(); if (ids?.length) mv.fit(ids); else mv.fit(); };
   multiBtn.onclick = () => { multi = !multi; multiBtn.setAttribute('aria-pressed', multi); if (!multi && selected.length > 1) selected = selected.slice(-1); mv.setSelected(selected); drawPanel(); };
+  const setArea = on => {
+    if (!areaBtn) return;
+    areaBtn.setAttribute('aria-pressed', on); areaHint.hidden = !on;
+    mv.setMode(on ? 'draw' : (editing ? 'edit' : 'view'));
+  };
+  if (areaBtn) areaBtn.onclick = () => setArea(areaBtn.getAttribute('aria-pressed') !== 'true');
+  exportBtn.onclick = () => openMapExport({ E, from, to, statuses: statuses() });
+  async function createArea(geom) {
+    setArea(false);
+    const existing = S.kiosks.filter(k => /^AR\d+$/.test(k.code)).map(k => +k.code.slice(2));
+    const next = 'AR' + ((existing.length ? Math.max(...existing) : 0) + 1);
+    const code = h('input', { class: 'in', value: next, dir: 'ltr' });
+    const label = h('input', { class: 'in', placeholder: 'مثال: ساحة العروض، مساحة سيارة، منطقة ألعاب' });
+    const ok = h('button', { class: 'btn primary' }, 'إنشاء المساحة وحجزها');
+    const cancel = h('button', { class: 'btn' }, 'إلغاء');
+    const md = modal({ title: 'مساحة جديدة للإيجار', body: [
+      h('p', { class: 'hint', style: { margin: 0 } }, 'ستُضاف المساحة إلى الخريطة كمكان قابل للحجز، ثم يُفتح نموذج الحجز مباشرة.'),
+      h('div', { class: 'grid2' }, field('رمز المساحة', code), field('الوصف (اختياري)', label))], footer: [ok, cancel] });
+    cancel.onclick = () => md.close();
+    ok.onclick = async () => {
+      const c = code.value.trim().toUpperCase().replace(/\s+/g, '');
+      if (!c) return toast('اكتب رمز المساحة', { error: true });
+      ok.disabled = true;
+      const { data, error } = await sb.from('kiosks').insert({ edition_id: E.id, code: c, grp: 'AR', category: 'مساحة', zone: label.value.trim() || null, geom, shape: 'rect' }).select().single();
+      ok.disabled = false;
+      if (error) return toast(/duplicate|unique/i.test(error.message) ? 'يوجد كشك أو مساحة بنفس الرمز' : errText(error), { error: true });
+      md.close();
+      await refresh();
+      selected = [data.id]; mv.setSelected(selected); drawPanel();
+      openBooking({ kioskIds: [data.id], from, to });
+    };
+  }
   if (editBtn) editBtn.onclick = () => {
     editing = !editing; editBtn.setAttribute('aria-pressed', editing); multi = false; multiBtn.setAttribute('aria-pressed', false);
     multiBtn.hidden = editing;
@@ -507,6 +547,98 @@ function pageMap(root) {
   upd();
   requestAnimationFrame(() => mv.fit());
   return () => { root._refresh = null; };
+}
+
+// ---------- map export (PNG image or printable PDF) ----------
+function openMapExport({ E, from, to, statuses }) {
+  const names = h('input', { type: 'checkbox' });
+  const fmtSel = h('select', { class: 'in' }, h('option', { value: 'png' }, 'صورة PNG'), h('option', { value: 'pdf' }, 'PDF / طباعة'));
+  const go = h('button', { class: 'btn primary' }, 'تصدير');
+  const m = modal({ title: 'تصدير الخريطة', body: [
+    h('p', { class: 'hint', style: { margin: 0 } }, `تُصدَّر الخريطة بألوان حالة الأكشاك للفترة ${fmtDate(from)} – ${fmtDate(to)} كما تظهر الآن.`),
+    field('الصيغة', fmtSel),
+    h('label', { class: 'check' }, names, 'إظهار أسماء العملاء على الأكشاك المحجوزة (للاستخدام الداخلي فقط)')],
+    footer: [go, h('button', { class: 'btn', onclick: () => m.close() }, 'إلغاء')] });
+  go.onclick = async () => {
+    go.disabled = true; go.textContent = 'جارٍ التجهيز…';
+    try {
+      const canvas = await renderMapCanvas({ E, from, to, statuses, withNames: names.checked });
+      const name = `kiosk-map-${E.slug}-${from}_${to}`;
+      if (fmtSel.value === 'png') {
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        const a = h('a', { href: URL.createObjectURL(blob), download: name + '.png' }); document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      } else {
+        const url = canvas.toDataURL('image/jpeg', 0.92);
+        const w = window.open('', '_blank');
+        if (!w) throw new Error('اسمح بالنوافذ المنبثقة لهذا الموقع لتتمكن من الطباعة');
+        w.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>${name}</title><style>@page{size:A3 portrait;margin:8mm}body{margin:0;text-align:center}img{max-width:100%;max-height:97vh}.bar{padding:8px;font-family:sans-serif}@media print{.bar{display:none}}</style></head><body><div class="bar"><button onclick="print()">طباعة / حفظ PDF</button></div><img src="${url}" onload="setTimeout(()=>print(),300)"></body></html>`);
+        w.document.close();
+      }
+      m.close(); toast('تم تصدير الخريطة');
+    } catch (e) { toast(errText(e), { error: true }); }
+    go.disabled = false; go.textContent = 'تصدير';
+  };
+}
+
+async function renderMapCanvas({ E, from, to, statuses, withNames }) {
+  const c = colors();
+  const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('تعذر تحميل صورة الخريطة')); i.src = E.map_url; });
+  const W = E.map_w || img.naturalWidth, H = E.map_h || img.naturalHeight;
+  const head = Math.round(W * 0.085), cv = document.createElement('canvas');
+  cv.width = W; cv.height = H + head;
+  const x = cv.getContext('2d');
+  try { await document.fonts.load(`600 40px "Readex Pro"`); } catch {}
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, cv.width, cv.height);
+  x.drawImage(img, 0, head, W, H);
+  // stripes for partly booked
+  const pc = document.createElement('canvas'); pc.width = pc.height = 16; const px = pc.getContext('2d');
+  px.fillStyle = c.available; px.fillRect(0, 0, 16, 16); px.strokeStyle = c.reserved; px.lineWidth = 5;
+  px.beginPath(); px.moveTo(-4, 4); px.lineTo(4, -4); px.moveTo(0, 16); px.lineTo(16, 0); px.moveTo(12, 20); px.lineTo(20, 12); px.stroke();
+  const stripes = x.createPattern(pc, 'repeat');
+  const custOf = id => { const r = S.reservations.find(r => r.status !== 'cancelled' && !r.hold_expired && r.kiosk_ids.includes(id) && r.start_date <= to && r.end_date >= from); return r?.customer_name || ''; };
+  const font = '"Readex Pro", Tahoma, sans-serif';
+  for (const k of S.kiosks) {
+    const g = k.geom, cx = g.cx * W, cy = g.cy * H + head, w = g.w * W, hh = g.h * H, st = statuses.get(k.id) || 'available';
+    x.save(); x.translate(cx, cy); x.rotate((g.rot || 0) * Math.PI / 180);
+    x.beginPath();
+    if (k.shape === 'triangle') { x.moveTo(0, -hh / 2); x.lineTo(w / 2, hh / 2); x.lineTo(-w / 2, hh / 2); x.closePath(); }
+    else if (k.shape === 'ellipse') x.ellipse(0, 0, w / 2, hh / 2, 0, 0, Math.PI * 2);
+    else x.rect(-w / 2, -hh / 2, w, hh);
+    x.globalAlpha = 0.85; x.fillStyle = st === 'partial' ? stripes : (c[st] || '#888'); x.fill();
+    x.globalAlpha = 1; x.lineWidth = Math.max(1.5, W / 1200); x.strokeStyle = 'rgba(0,0,0,.55)'; x.stroke();
+    const vertical = hh > w * 1.3; if (vertical) x.rotate(Math.PI / 2);
+    const len = vertical ? hh : w, thick = vertical ? w : hh;
+    const fs = Math.max(8, Math.min(thick * 0.5, len * 0.32, W / 90));
+    x.font = `700 ${fs}px ${font}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.lineWidth = fs / 5; x.strokeStyle = 'rgba(0,0,0,.6)'; x.fillStyle = '#fff';
+    x.strokeText(k.code, 0, 0); x.fillText(k.code, 0, 0);
+    x.restore();
+    const nm = withNames && st !== 'available' && st !== 'disabled' ? custOf(k.id) : '';
+    if (nm) {
+      const fs2 = Math.max(9, W / 150);
+      x.font = `600 ${fs2}px ${font}`; x.textAlign = 'center'; x.textBaseline = 'top';
+      const tw = x.measureText(nm).width + fs2 * 0.6, ty = cy + Math.max(w, hh) / 2 + fs2 * 0.2;
+      x.fillStyle = 'rgba(255,255,255,.9)'; x.fillRect(cx - tw / 2, ty, tw, fs2 * 1.3);
+      x.fillStyle = '#12372a'; x.fillText(nm, cx, ty + fs2 * 0.12);
+    }
+  }
+  // header: title, period, legend with counts
+  x.fillStyle = '#12372a'; x.fillRect(0, 0, W, head);
+  x.direction = 'rtl'; x.textAlign = 'right'; x.textBaseline = 'middle';
+  x.fillStyle = '#ffffff'; x.font = `700 ${head * 0.3}px ${font}`; x.fillText(E.name, W - head * 0.3, head * 0.3);
+  x.fillStyle = '#b8913a'; x.font = `500 ${head * 0.17}px ${font}`;
+  x.fillText(`خريطة الأكشاك — ${fmtDate(from)} إلى ${fmtDate(to)} — صدرت ${fmtDateTime(new Date())}`, W - head * 0.3, head * 0.62);
+  const cnt = s => [...statuses.values()].filter(v => v === s).length;
+  let lx = W - head * 0.3; const ly = head * 0.86, sw = head * 0.12;
+  x.font = `500 ${head * 0.13}px ${font}`;
+  for (const s of ['available', 'partial', 'held', 'reserved', 'disabled']) {
+    const label = `${STATUS_LABEL[s]} ${cnt(s)}`;
+    x.fillStyle = s === 'partial' ? stripes : c[s]; x.fillRect(lx - sw, ly - sw / 2, sw, sw);
+    x.fillStyle = '#ffffff'; x.fillText(label, lx - sw * 1.4, ly);
+    lx -= sw * 1.4 + x.measureText(label).width + head * 0.25;
+  }
+  return cv;
 }
 
 function freeGaps(rs, start, end) {

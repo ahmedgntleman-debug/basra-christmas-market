@@ -1,10 +1,10 @@
 // Reservations list, customers, reports, settings.
 import {
   sb, h, $, $$, toast, errText, money, fmtNum, fmtDate, fmtDateLong, fmtDateTime, todayISO, addDays, daysBetween,
-  computeStatuses, statusBg, STATUS_LABEL, PAY_LABEL, RES_LABEL, ROLE_LABEL, DEFAULT_COLORS, badge, modal, confirmBox, exportRows, printHTML, esc,
+  parseAmount, computeStatuses, statusBg, STATUS_LABEL, PAY_LABEL, RES_LABEL, ROLE_LABEL, DEFAULT_COLORS, badge, modal, confirmBox, exportRows, printHTML, esc,
 } from './common.js';
-import { S, can, refresh, settings, colors, kioskById, codeSort, loadEditions, switchEdition, DEFAULT_CONTRACT } from './state.js';
-import { openBooking, openReservation, openPayment, openCustomer, field } from './booking.js';
+import { S, can, refresh, settings, colors, kioskById, codeSort, loadEditions, switchEdition, DEFAULT_CONTRACT, DEFAULT_SPONSOR_CONTRACT } from './state.js';
+import { openBooking, openReservation, openPayment, openCustomer, field, DEAL_LABEL } from './booking.js';
 import { listModels } from './assistant.js';
 
 const numCell = (v, unknown = '—') => h('td', { class: 'money' }, v == null ? h('span', { class: 'hint' }, unknown) : h('span', { class: 'num' }, fmtNum(v)));
@@ -28,6 +28,7 @@ const RES_COLUMNS = [
   { label: 'العميل', value: r => r.customer_name || 'حجز مؤقت' },
   { label: 'الهاتف', value: r => r.customer_phone || '' },
   { label: 'الأكشاك', value: r => r.kiosk_codes.join('، ') },
+  { label: 'النوع', value: r => DEAL_LABEL[r.deal_type || 'rental'] },
   { label: 'من', value: r => fmtDate(r.start_date) },
   { label: 'إلى', value: r => fmtDate(r.end_date) },
   { label: 'الأيام', value: r => r.days },
@@ -46,6 +47,7 @@ export function pageReservations(root) {
   const pay = h('select', { class: 'in' }, h('option', { value: '' }, 'كل حالات الدفع'), Object.entries(PAY_LABEL).filter(([k]) => k !== 'cancelled').map(([k, v]) => h('option', { value: k }, v)));
   const groups = [...new Set(S.kiosks.map(k => k.grp).filter(Boolean))].sort();
   const grp = h('select', { class: 'in' }, h('option', { value: '' }, 'كل المجموعات'), groups.map(g => h('option', { value: g }, 'أكشاك ' + g)));
+  const dealF = h('select', { class: 'in' }, h('option', { value: '' }, 'الإيجار والرعاية'), Object.entries(DEAL_LABEL).map(([k, v]) => h('option', { value: k }, v)));
   const sortSel = h('select', { class: 'in' }, h('option', { value: 'new' }, 'الأحدث أولاً'), h('option', { value: 'kiosk' }, 'حسب رقم الكشك'), h('option', { value: 'remaining' }, 'الأعلى متبقياً'), h('option', { value: 'deadline' }, 'أقرب موعد تسديد'));
   const tableBox = h('div');
   const rows = () => {
@@ -53,6 +55,7 @@ export function pageReservations(root) {
     let list = S.reservations.filter(r =>
       (st.value === '' || (st.value === 'live' ? r.status !== 'cancelled' : r.status === st.value)) &&
       (!pay.value || r.pay_status === pay.value) &&
+      (!dealF.value || (r.deal_type || 'rental') === dealF.value) &&
       (!grp.value || r.kiosk_ids.some(id => kioskById(id)?.grp === grp.value)) &&
       (!s || [(r.customer_name || ''), (r.customer_company || ''), (r.customer_phone || ''), r.kiosk_codes.join(' ')].join(' ').toLowerCase().replace(/\s+/g, '').includes(s)));
     const by = {
@@ -71,7 +74,7 @@ export function pageReservations(root) {
       h('thead', {}, h('tr', {}, ['العميل', 'الأكشاك', 'الفترة', 'الأيام', 'المبلغ', 'المدفوع', 'المتبقي', 'الدفع', 'الحجز'].map((t, i) => h('th', { class: i >= 4 && i <= 6 ? 'money' : '' }, t)))),
       h('tbody', {}, list.map(r => h('tr', { class: 'click', onclick: () => openReservation(r.id) },
         h('td', {}, h('strong', {}, r.customer_name || 'حجز مؤقت'), r.customer_phone ? h('div', { class: 'hint num' }, r.customer_phone) : null),
-        h('td', {}, h('b', {}, r.kiosk_codes.join('، '))),
+        h('td', {}, h('b', {}, r.kiosk_codes.join('، ')), r.deal_type === 'sponsorship' ? h('span', { class: 'badge b-sponsor', style: { marginInlineStart: '6px' } }, 'رعاية') : null),
         h('td', {}, `${fmtDate(r.start_date)} – ${fmtDate(r.end_date)}`),
         h('td', {}, r.days),
         numCell(r.total, 'غير محدد'), numCell(r.paid), numCell(r.remaining),
@@ -80,12 +83,12 @@ export function pageReservations(root) {
       h('tfoot', {}, h('tr', {}, h('td', { colspan: 4 }, `${list.length} حجز`),
         numCell(sum(r => r.total)), numCell(sum(r => r.paid)), numCell(sum(r => r.remaining)), h('td', { colspan: 2 }))))));
   };
-  [q, st, pay, grp, sortSel].forEach(el => el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', draw));
+  [q, st, pay, grp, dealF, sortSel].forEach(el => el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', draw));
   root.replaceChildren(
     h('div', { class: 'pagebar' },
       can.book() ? h('button', { class: 'btn primary', onclick: () => openBooking() }, 'حجز جديد') : null,
       can.pay() ? h('button', { class: 'btn', onclick: () => openPayment() }, 'إضافة دفعة') : null,
-      h('div', { class: 'filters' }, q, st, pay, grp, sortSel),
+      h('div', { class: 'filters' }, q, st, pay, grp, dealF, sortSel),
       exportBar(rows, RES_COLUMNS, 'reservations-' + S.edition.slug, 'تقرير الحجوزات')),
     tableBox);
   draw();
@@ -144,21 +147,96 @@ export function pageCustomers(root) {
 
 // ================= reports =================
 const TABS = [
-  ['outstanding', 'المبالغ المتبقية'], ['payments', 'الدفعات'], ['daily', 'التحصيل اليومي'], ['availability', 'توفر الأكشاك'],
+  ['visitors', 'الزوار والإيراد اليومي'], ['outstanding', 'المبالغ المتبقية'], ['payments', 'الدفعات'], ['daily', 'التحصيل اليومي'], ['availability', 'توفر الأكشاك'],
   ['reservations', 'الحجوزات حسب الفترة'], ['editions', 'مقارنة النسخ'], ['log', 'سجل النشاط'],
 ];
 export function pageReports(root) {
-  let tab = sessionStorage.getItem('bcm.rtab') || 'outstanding';
+  let tab = sessionStorage.getItem('bcm.rtab') || 'visitors';
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
   const body = h('div', { class: 'rbody' });
   const adv = settings().advanced_reports;
   if (!adv && ['reservations', 'editions'].includes(tab)) tab = 'outstanding';
   const drawTabs = () => tabs.replaceChildren(...TABS.filter(([k]) => (k !== 'log' || can.admin()) && (adv || !['reservations', 'editions'].includes(k))).map(([k, l]) =>
     h('button', { role: 'tab', 'aria-selected': k === tab, onclick: () => { tab = k; sessionStorage.setItem('bcm.rtab', k); drawTabs(); draw(); } }, l)));
-  const draw = () => ({ outstanding: rOutstanding, payments: rPayments, daily: rDaily, availability: rAvailability, reservations: rReservations, editions: rEditions, log: rLog }[tab] || rOutstanding)(body);
+  const draw = () => ({ visitors: rVisitors, outstanding: rOutstanding, payments: rPayments, daily: rDaily, availability: rAvailability, reservations: rReservations, editions: rEditions, log: rLog }[tab] || rOutstanding)(body);
   drawTabs(); draw();
   root.replaceChildren(tabs, body);
   root._refresh = draw;
+}
+
+const WD_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const weekday = iso => WD_AR[new Date(iso + 'T00:00:00Z').getUTCDay()];
+export function openDailyEntry(day, after) {
+  const E = S.edition;
+  const row = S.daily.find(d => d.day === day) || {};
+  const date = h('input', { class: 'in', type: 'date', value: day || todayISO() });
+  const vis = h('input', { class: 'in', type: 'number', min: 0, inputmode: 'numeric', value: row.visitors ?? '', placeholder: 'مثال: 1250' });
+  const inc = amountInputLite(row.income);
+  const notes = h('input', { class: 'in', value: row.notes || '', placeholder: 'اختياري، مثل: عطلة رسمية، حفل موسيقي' });
+  const fill = () => { const r = S.daily.find(d => d.day === date.value) || {}; vis.value = r.visitors ?? ''; inc.set(r.income); notes.value = r.notes || ''; };
+  date.onchange = fill;
+  const save = h('button', { class: 'btn primary' }, 'حفظ');
+  const m = modal({ title: 'تسجيل يومية المهرجان', body: [
+    h('div', { class: 'grid2' }, field('اليوم', date), field('عدد الزوار', vis)),
+    field('إجمالي الإيراد لهذا اليوم', inc.inp, inc.out), field('ملاحظات', notes),
+    h('p', { class: 'hint', style: { margin: 0 } }, 'إذا كان اليوم مسجلاً من قبل يتم تحديثه.')],
+    footer: [save, h('button', { class: 'btn', onclick: () => m.close() }, 'إلغاء')] });
+  save.onclick = async () => {
+    if (!date.value) return toast('اختر اليوم', { error: true });
+    const v = vis.value.trim() === '' ? null : Math.round(+vis.value);
+    const i = inc.get();
+    if ((v != null && (Number.isNaN(v) || v < 0)) || Number.isNaN(i)) return toast('أحد الأرقام غير صالح', { error: true });
+    if (v == null && i == null) return toast('اكتب عدد الزوار أو الإيراد', { error: true });
+    save.disabled = true;
+    const { error } = await sb.from('daily_stats').upsert({ edition_id: E.id, day: date.value, visitors: v, income: i, notes: notes.value.trim() || null, updated_at: new Date().toISOString() }, { onConflict: 'edition_id,day' });
+    save.disabled = false;
+    if (error) return toast(errText(error), { error: true });
+    m.close(); await refresh(); toast('تم حفظ يومية ' + fmtDate(date.value)); after?.();
+  };
+}
+function amountInputLite(value) {
+  const inp = h('input', { class: 'in', inputmode: 'decimal', value: value == null ? '' : fmtNum(value), placeholder: 'مثال: 3,500,000 أو 3.5 مليون' });
+  const out = h('span', { class: 'hint' });
+  const upd = () => { const v = parseAmount(inp.value); out.textContent = inp.value.trim() === '' ? '' : Number.isNaN(v) ? 'مبلغ غير صالح' : '= ' + money(v); };
+  inp.addEventListener('input', upd); upd();
+  return { inp, out, get: () => parseAmount(inp.value), set: v => { inp.value = v == null ? '' : fmtNum(v); upd(); } };
+}
+
+function rVisitors(el) {
+  const E = S.edition;
+  const days = []; for (let d = E.start_date; d <= E.end_date; d = addDays(d, 1)) days.push(d);
+  const extra = S.daily.filter(d => d.day < E.start_date || d.day > E.end_date).map(d => d.day);
+  const all = [...new Set([...days, ...extra])].sort();
+  const by = new Map(S.daily.map(d => [d.day, d]));
+  const rows = () => all.map(d => ({ day: d, ...(by.get(d) || {}) }));
+  const rec = S.daily;
+  const totV = rec.reduce((a, d) => a + (d.visitors || 0), 0), totI = rec.reduce((a, d) => a + (d.income || 0), 0);
+  const nV = rec.filter(d => d.visitors != null).length, nI = rec.filter(d => d.income != null).length;
+  const maxV = Math.max(1, ...rec.map(d => d.visitors || 0)), maxI = Math.max(1, ...rec.map(d => d.income || 0));
+  const best = rec.filter(d => d.visitors != null).sort((a, b) => b.visitors - a.visitors)[0];
+  const today = todayISO();
+  const cols = [
+    { label: 'اليوم', value: r => fmtDate(r.day) }, { label: 'اليوم من الأسبوع', value: r => weekday(r.day) },
+    { label: 'عدد الزوار', value: r => r.visitors ?? '', money: true, sum: true }, { label: 'الإيراد', value: r => r.income ?? '', money: true, sum: true },
+    { label: 'ملاحظات', value: r => r.notes || '' },
+  ];
+  const kpi = (l, v) => h('div', {}, h('span', { class: 'hint' }, l), h('b', { class: 'num' }, v));
+  const bar = (v, max, cls) => v == null ? h('span', { class: 'hint' }, '—') : h('span', { class: 'vbar' }, h('i', { class: cls, style: { width: Math.round(100 * v / max) + '%' } }), h('span', { class: 'num' }, fmtNum(v)));
+  el.replaceChildren(
+    h('div', { class: 'pagebar' },
+      can.daily() ? h('button', { class: 'btn primary', onclick: () => openDailyEntry(today >= E.start_date && today <= E.end_date ? today : E.start_date) }, 'تسجيل يومية') : null,
+      h('p', { class: 'hint', style: { margin: 0 } }, 'عدد زوار المهرجان وإيراده لكل يوم. اضغط على أي يوم لتسجيله أو تعديله.'),
+      exportBar(() => rows().filter(r => r.visitors != null || r.income != null), cols, 'daily-visitors-income-' + E.slug, 'الزوار والإيراد اليومي')),
+    h('div', { class: 'mini-stats panel' },
+      kpi('إجمالي الزوار', fmtNum(totV)), kpi('إجمالي الإيراد', money(totI)),
+      kpi('متوسط الزوار يومياً', nV ? fmtNum(Math.round(totV / nV)) : '—'), kpi('متوسط الإيراد يومياً', nI ? money(Math.round(totI / nI)) : '—'),
+      kpi('أيام مسجلة', `${rec.length} من ${days.length}`), kpi('أعلى يوم زيارة', best ? `${fmtDate(best.day)} (${fmtNum(best.visitors)})` : '—')),
+    h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+      h('thead', {}, h('tr', {}, ['اليوم', '', 'عدد الزوار', 'الإيراد', 'ملاحظات'].map(t => h('th', {}, t)))),
+      h('tbody', {}, rows().map(r => h('tr', { class: can.daily() ? 'click' : '', onclick: can.daily() ? () => openDailyEntry(r.day) : null },
+        h('td', {}, h('b', {}, fmtDate(r.day))), h('td', { class: 'hint' }, weekday(r.day) + (r.day === today ? ' — اليوم' : '')),
+        h('td', {}, bar(r.visitors, maxV, 'v')), h('td', {}, bar(r.income, maxI, 'i')), h('td', {}, r.notes || '')))),
+      h('tfoot', {}, h('tr', {}, h('td', { colspan: 2 }, 'المجموع'), h('td', {}, h('b', { class: 'num' }, fmtNum(totV))), h('td', {}, h('b', { class: 'num' }, money(totI))), h('td'))))));
 }
 
 function rOutstanding(el) {
@@ -373,6 +451,7 @@ export function pageSettings(root) {
     contract: h('select', { class: 'in', disabled: dis, style: { maxWidth: '320px' } }, [['ask', 'اسأل في كل مرة'], ['always', 'افتح العقد تلقائياً بعد الحفظ'], ['never', 'لا تسأل (أنشئ العقد من الحجز عند الحاجة)']].map(([v, l]) => h('option', { value: v, selected: cfg.contract_prompt === v }, l))),
   };
   const tpl = h('textarea', { class: 'in', style: { minHeight: '320px', fontSize: '14px', lineHeight: 1.8 }, disabled: dis }, cfg.contract_template || DEFAULT_CONTRACT);
+  const stpl = h('textarea', { class: 'in', style: { minHeight: '320px', fontSize: '14px', lineHeight: 1.8 }, disabled: dis }, cfg.sponsor_template || DEFAULT_SPONSOR_CONTRACT);
   const logoUrl = h('input', { class: 'in', dir: 'ltr', value: cfg.logo_url || '', disabled: dis, placeholder: 'https://…' });
   const logoFile = h('input', { type: 'file', accept: 'image/*', disabled: dis });
   logoFile.onchange = async () => {
@@ -387,7 +466,9 @@ export function pageSettings(root) {
     const settingsPatch = { ...(E.settings || {}), reminders: F.reminders.checked, reminders_overdue_only: F.overdue.checked,
       reminder_days: Math.max(0, +F.days.value || 0), show_analytics: F.analytics.checked, contract_prompt: F.contract.value,
       receipts: F.receipts.checked, extended_customer: F.extended.checked, advanced_reports: F.advanced.checked,
-      contract_template: tpl.value, logo_url: logoUrl.value.trim() || null };
+      contract_template: tpl.value === DEFAULT_CONTRACT ? undefined : tpl.value,
+      sponsor_template: stpl.value === DEFAULT_SPONSOR_CONTRACT ? undefined : stpl.value, logo_url: logoUrl.value.trim() || null };
+    for (const k of ['contract_template', 'sponsor_template']) if (settingsPatch[k] === undefined) delete settingsPatch[k];
     const colorsPatch = Object.fromEntries(Object.entries(colorInputs).map(([k, v]) => [k, v.value]));
     await saveEdition({ settings: settingsPatch, colors: colorsPatch }, 'تم حفظ الإعدادات');
   } }, 'حفظ الإعدادات') : null;
@@ -425,8 +506,9 @@ export function pageSettings(root) {
       h('label', { class: 'check' }, F.advanced, 'التقارير المتقدمة (الحجوزات حسب الفترة، مقارنة النسخ)'),
       field('بعد حفظ الحجز — عقد الإيجار', F.contract),
       h('div', { class: 'grid2' }, field('رابط شعار الشركة (يظهر في العقد)', logoUrl), field('أو ارفع صورة الشعار', logoFile)),
-      field('نص عقد الإيجار', tpl, h('span', { class: 'hint' }, 'الحقول التي تُملأ تلقائياً: {festival} {customer} {company_line} {phone} {kiosks} {start} {end} {days} {total} {paid} {remaining} {deadline} {today} {notes}')),
-      admin ? h('div', { style: { display: 'flex', gap: '8px' } }, saveFeatures, h('button', { class: 'btn ghost', onclick: () => { tpl.value = DEFAULT_CONTRACT; } }, 'استعادة نص العقد الافتراضي')) : null),
+      field('نص عقد إيجار الكشك', tpl, h('span', { class: 'hint' }, 'الحقول التي تُملأ تلقائياً: {festival} {festival_start} {festival_end} {customer} {company_line} {contact} {phone} {email} {kiosks} {start} {end} {days} {daily} {total} {paid} {remaining} {deadline} {today} {notes}')),
+      field('نص عقد الرعاية', stpl),
+      admin ? h('div', { style: { display: 'flex', gap: '8px' } }, saveFeatures, h('button', { class: 'btn ghost', onclick: () => { tpl.value = DEFAULT_CONTRACT; stpl.value = DEFAULT_SPONSOR_CONTRACT; } }, 'استعادة نصوص العقود الافتراضية')) : null),
   ];
   if (admin) children.push(assistantSection(sec, E, saveEdition), cloneSection(sec), usersSection(sec), backupSection(sec));
   children.push(accountSection(sec));

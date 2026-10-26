@@ -137,6 +137,7 @@ create table if not exists public.reservations (
   discount         bigint not null default 0 check (discount >= 0),
   extra_charges    bigint not null default 0 check (extra_charges >= 0),
   payment_deadline date,
+  deal_type        text not null default 'rental' check (deal_type in ('rental','sponsorship')),
   notes            text,
   cancel_reason    text,
   created_at       timestamptz not null default now(),
@@ -145,6 +146,7 @@ create table if not exists public.reservations (
   check (end_date >= start_date),
   check (status <> 'confirmed' or customer_id is not null)
 );
+alter table public.reservations add column if not exists deal_type text not null default 'rental' check (deal_type in ('rental','sponsorship'));
 create index if not exists reservations_edition_idx on public.reservations(edition_id);
 create index if not exists reservations_customer_idx on public.reservations(customer_id);
 
@@ -261,6 +263,22 @@ create table if not exists public.documents (
 );
 
 -- ---------------------------------------------------------------------
+-- Daily visitors & income of the market (one row per day per edition)
+-- ---------------------------------------------------------------------
+create table if not exists public.daily_stats (
+  id          uuid primary key default gen_random_uuid(),
+  edition_id  uuid not null references public.editions(id) on delete cascade,
+  day         date not null,
+  visitors    int check (visitors is null or visitors >= 0),
+  income      bigint check (income is null or income >= 0),
+  notes       text,
+  created_at  timestamptz not null default now(),
+  created_by  uuid default auth.uid(),
+  updated_at  timestamptz not null default now(),
+  unique (edition_id, day)
+);
+
+-- ---------------------------------------------------------------------
 -- Activity log (audit trail) — written by triggers only
 -- ---------------------------------------------------------------------
 create table if not exists public.activity_log (
@@ -296,7 +314,7 @@ begin
 end $$;
 
 do $$ declare t text; begin
-  foreach t in array array['editions','kiosks','customers','reservations','reservation_kiosks','payments','profiles','payment_schedules','contracts','documents'] loop
+  foreach t in array array['editions','kiosks','customers','reservations','reservation_kiosks','payments','profiles','payment_schedules','contracts','documents','daily_stats'] loop
     execute format('drop trigger if exists audit_%1$s on public.%1$s', t);
     execute format('create trigger audit_%1$s after insert or update or delete on public.%1$s
                     for each row execute function public.audit()', t);
@@ -306,7 +324,8 @@ end $$;
 -- ---------------------------------------------------------------------
 -- Reservation summary view (finance computed here — never by hand)
 -- ---------------------------------------------------------------------
-create or replace view public.reservation_summary with (security_invoker = true) as
+drop view if exists public.reservation_summary;
+create view public.reservation_summary with (security_invoker = true) as
 select r.*,
        c.name            as customer_name,
        c.company         as customer_company,
@@ -393,12 +412,12 @@ begin
   end if;
 
   insert into reservations(edition_id, customer_id, status, start_date, end_date, hold_until,
-                           agreed_amount, discount, extra_charges, payment_deadline, notes)
+                           agreed_amount, discount, extra_charges, payment_deadline, notes, deal_type)
   values ((p->>'edition_id')::uuid, v_cust, coalesce(nullif(p->>'status',''),'confirmed'),
           (p->>'start_date')::date, (p->>'end_date')::date, nullif(p->>'hold_until','')::timestamptz,
           nullif(p->>'agreed_amount','')::bigint, coalesce(nullif(p->>'discount','')::bigint,0),
           coalesce(nullif(p->>'extra_charges','')::bigint,0), nullif(p->>'payment_deadline','')::date,
-          nullif(p->>'notes',''))
+          nullif(p->>'notes',''), coalesce(nullif(p->>'deal_type',''),'rental'))
   returning id into v_res;
 
   if jsonb_array_length(coalesce(p->'kiosk_ids','[]')) = 0 then
@@ -576,10 +595,11 @@ alter table public.activity_log       enable row level security;
 alter table public.payment_schedules  enable row level security;
 alter table public.contracts          enable row level security;
 alter table public.documents          enable row level security;
+alter table public.daily_stats        enable row level security;
 
 do $$ declare pol record; begin
   for pol in select policyname, tablename from pg_policies where schemaname = 'public'
-    and tablename in ('profiles','editions','kiosks','customers','reservations','reservation_kiosks','payments','activity_log','payment_schedules','contracts','documents')
+    and tablename in ('profiles','editions','kiosks','customers','reservations','reservation_kiosks','payments','activity_log','payment_schedules','contracts','documents','daily_stats')
   loop execute format('drop policy %I on public.%I', pol.policyname, pol.tablename); end loop;
 end $$;
 
@@ -605,6 +625,9 @@ create policy editions_write on public.editions for all to authenticated
   using (public.has_role('super_admin')) with check (public.has_role('super_admin'));
 create policy kiosks_write on public.kiosks for all to authenticated
   using (public.has_role('super_admin')) with check (public.has_role('super_admin'));
+-- reservation managers may add custom rental areas (group AR) drawn on the map
+create policy kiosks_area_ins on public.kiosks for insert to authenticated
+  with check (grp = 'AR' and public.has_role('super_admin','reservations'));
 
 -- customers: everyone except read-only
 create policy cust_ins on public.customers for insert to authenticated
@@ -643,6 +666,11 @@ create policy contracts_del on public.contracts for delete to authenticated usin
 create policy docs_read on public.documents for select to authenticated using (public.app_role() is not null);
 create policy docs_ins on public.documents for insert to authenticated with check (public.has_role('super_admin','reservations','finance'));
 create policy docs_del on public.documents for delete to authenticated using (public.has_role('super_admin'));
+
+-- daily visitors & income: finance + super admin write, all staff read
+create policy daily_read on public.daily_stats for select to authenticated using (public.app_role() is not null);
+create policy daily_write on public.daily_stats for all to authenticated
+  using (public.has_role('super_admin','finance')) with check (public.has_role('super_admin','finance'));
 
 -- Anonymous visitors get nothing except get_public_map()
 revoke all on all tables in schema public from anon;

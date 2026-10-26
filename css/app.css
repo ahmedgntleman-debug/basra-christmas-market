@@ -87,6 +87,7 @@ input.in:focus, select.in:focus, textarea.in:focus { border-color: var(--pine-3)
 .b-cancelled { background: #ececec; color: #777; text-decoration: line-through; }
 .b-held { background: #fdebd9; color: #a0520b; }
 .b-confirmed { background: #e3f2e8; color: var(--ok); }
+.b-sponsor { background: #e3e8fb; color: #2740a8; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: var(--radius-s); background: var(--brass-soft); color: #5b4512; font-weight: 600; font-size: 13px; }
 .chip button { border: 0; background: none; cursor: pointer; padding: 0; color: inherit; font-size: 15px; line-height: 1; }
 
@@ -142,6 +143,7 @@ table.t tfoot td { font-weight: 600; border-top: 1px solid var(--line); backgrou
 .mapctl button { width: 40px; height: 40px; border-radius: var(--radius-s); border: 1px solid var(--line-2); background: var(--paper); font-size: 20px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-inline-end: 5px; vertical-align: -1px; }
+.drawrect { fill: rgba(184,145,58,.25); stroke: var(--brass); stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
 .handle { fill: var(--brass); stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: nwse-resize; }
 .rothandle { fill: #fff; stroke: var(--brass); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 
