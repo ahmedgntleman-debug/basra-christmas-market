@@ -724,3 +724,34 @@ do $$ begin
   begin alter publication supabase_realtime add table public.kiosks; exception when others then null; end;
   begin alter publication supabase_realtime add table public.payment_schedules; exception when others then null; end;
 end $$;
+-- ---------------------------------------------------------------------
+-- Finance ledger for the P&L: daily income by source, daily expenses,
+-- operating expenses and other income (kiosk rent & sponsorship come from reservations)
+-- ---------------------------------------------------------------------
+create table if not exists public.ledger (
+  id          uuid primary key default gen_random_uuid(),
+  edition_id  uuid not null references public.editions(id) on delete cascade,
+  day         date not null,
+  kind        text not null check (kind in ('daily_income','other_income','daily_expense','operating_expense')),
+  category    text not null,
+  description text,
+  party       text,
+  method      text,
+  amount      bigint not null check (amount > 0),
+  notes       text,
+  created_at  timestamptz not null default now(),
+  created_by  uuid default auth.uid(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists ledger_ed_day_idx on public.ledger(edition_id, day);
+drop trigger if exists audit_ledger on public.ledger;
+create trigger audit_ledger after insert or update or delete on public.ledger for each row execute function public.audit();
+alter table public.ledger enable row level security;
+drop policy if exists ledger_read on public.ledger;
+drop policy if exists ledger_write on public.ledger;
+create policy ledger_read on public.ledger for select to authenticated using (public.has_role('super_admin','finance','readonly'));
+create policy ledger_write on public.ledger for all to authenticated
+  using (public.has_role('super_admin','finance')) with check (public.has_role('super_admin','finance'));
+revoke all on public.ledger from anon;
+grant select, insert, update, delete on public.ledger to authenticated;
+do $$ begin begin alter publication supabase_realtime add table public.ledger; exception when others then null; end; end $$;

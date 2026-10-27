@@ -8,6 +8,7 @@ import { S, can, role, onChange, loadEditions, loadEditionData, refresh, switchE
 import { openBooking, openReservation, openPayment, openReminder, openCustomer, field } from './booking.js';
 import { pageReservations, pageCustomers, pageReports, pageSettings, openDailyEntry } from './pages.js';
 import { openAssistant, assistantReady } from './assistant.js';
+import { pagePnl } from './pnl.js';
 import { startI18n } from './i18n.js';
 import { initFestive, garland, baubles, countdown, tree, toggleButton, burst, jingle, sleigh } from './festive.js';
 
@@ -18,6 +19,7 @@ const ROUTES = {
   reservations: { title: 'الحجوزات', render: pageReservations },
   customers: { title: 'العملاء', render: pageCustomers },
   reports: { title: 'التقارير', render: pageReports },
+  pnl: { title: 'الأرباح والخسائر', render: pagePnl },
   settings: { title: 'الإعدادات', render: pageSettings },
 };
 let cleanup = null;
@@ -80,6 +82,7 @@ function showLogin() {
 }
 
 function shell() {
+  const pl = $('.nav a[href="#/pnl"]'); if (pl) pl.hidden = !can.pnl();
   garland($('.top'));
   sleigh({ first: 9000, every: [40000, 80000], when: () => !document.querySelector('.scrim') && /^#?\/?$/.test(location.hash) });
   $('.nav .foot').prepend(toggleButton());
@@ -103,7 +106,7 @@ function shell() {
 
 function render(full) {
   const key = location.hash.replace(/^#\/?/, '').split('?')[0];
-  const r = ROUTES[key] || ROUTES[''];
+  const r = (key === 'pnl' && !can.pnl() ? null : ROUTES[key]) || ROUTES[''];
   $$('.nav a').forEach(a => a.setAttribute('aria-current', a.getAttribute('href') === '#/' + key ? 'page' : 'false'));
   $('#page-title').textContent = r.title;
   document.title = r.title + ' — Basra Christmas Market';

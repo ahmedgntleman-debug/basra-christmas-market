@@ -311,6 +311,7 @@ export function sleigh({ first = 2500, every = [24000, 50000], when = () => true
     s.classList.add('go');
     anim = s.animate(frames, { duration: Math.max(9000, W * 9), easing: 'linear' });
     trail = setInterval(() => {
+      if (!busy && !music && !when()) { anim.cancel(); clearInterval(trail); s.classList.remove('go'); anim = null; schedule(); return; }
       const r = s.getBoundingClientRect(); if (!r.width) return;
       const p = el('span', 'fx-p', Math.random() < .5 ? '✦' : '✧');
       const x = ltr ? r.left + 10 : r.right - 10;

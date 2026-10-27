@@ -11,6 +11,7 @@ export const S = {
   customers: [],
   payments: [],       // rows of payment_list for the current edition
   daily: [],          // daily visitors & income
+  ledger: [],         // P&L entries (daily income by source, expenses)
   loaded: false,
 };
 
@@ -23,6 +24,8 @@ export const can = {
   book: () => ['super_admin', 'reservations'].includes(role()),
   pay: () => ['super_admin', 'reservations', 'finance'].includes(role()),
   daily: () => ['super_admin', 'finance'].includes(role()),
+  pnl: () => ['super_admin', 'finance', 'readonly'].includes(role()),
+  ledger: () => ['super_admin', 'finance'].includes(role()),
   customers: () => ['super_admin', 'reservations', 'finance'].includes(role()),
   admin: () => role() === 'super_admin',
 };
@@ -53,15 +56,17 @@ export async function loadEditions() {
 export async function loadEditionData() {
   if (!S.edition) { S.kiosks = []; S.reservations = []; S.payments = []; return; }
   const eid = S.edition.id;
-  const [k, r, c, p, d] = await Promise.all([
+  const [k, r, c, p, d, l] = await Promise.all([
     sb.from('kiosks').select('*').eq('edition_id', eid).order('code'),
     sb.from('reservation_summary').select('*').eq('edition_id', eid).order('created_at', { ascending: false }),
     sb.from('customers').select('*').order('name'),
     sb.from('payment_list').select('*').eq('edition_id', eid).order('created_at', { ascending: false }),
     sb.from('daily_stats').select('*').eq('edition_id', eid).order('day'),
+    can.pnl() ? sb.from('ledger').select('*').eq('edition_id', eid).order('day') : Promise.resolve({ data: [] }),
   ]);
   for (const x of [k, r, c, p]) if (x.error) throw x.error;
   S.daily = d.error ? [] : d.data;
+  S.ledger = l.error ? [] : (l.data || []);
   S.kiosks = k.data.sort((a, b) => codeSort(a.code, b.code));
   S.reservations = r.data;
   S.customers = c.data;
@@ -91,7 +96,7 @@ export function subscribeLive() {
   try {
     channel?.unsubscribe();
     channel = sb.channel('bcm-live');
-    for (const t of ['reservations', 'reservation_kiosks', 'payments', 'kiosks', 'customers', 'daily_stats'])
+    for (const t of ['reservations', 'reservation_kiosks', 'payments', 'kiosks', 'customers', 'daily_stats', 'ledger'])
       channel.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => {
         clearTimeout(timer); timer = setTimeout(() => refresh(), 400);
       });
