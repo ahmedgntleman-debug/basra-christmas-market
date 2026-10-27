@@ -1,7 +1,7 @@
 -- Basra Christmas Market — first edition + the 71 kiosks traced from the official map (plan 26-67).
 -- Run once, after schema.sql. Edit dates/contacts later from the app (Settings).
 insert into public.editions (slug, name, start_date, end_date, map_url, map_w, map_h)
-values ('bcm-2026', 'Basra Christmas Market 2026', '2026-12-10', '2027-01-02', 'map-v2.jpg', 2707, 3485)
+values ('bcm-2026', 'Basra Christmas Market 2026', '2026-12-10', '2027-01-02', 'map-v3.jpg', 2707, 3485)
 on conflict (slug) do nothing;
 
 insert into public.kiosks (edition_id, code, grp, category, geom, shape)
@@ -35,10 +35,6 @@ from public.editions e, (values
   ('B8', 'B', 'متوسط', '{"cx": 0.46103, "cy": 0.4901, "w": 0.02168, "h": 0.01162, "rot": -58.2}', 'rect'),
   ('B9', 'B', 'متوسط', '{"cx": 0.54982, "cy": 0.50379, "w": 0.01356, "h": 0.01548, "rot": -90.0}', 'rect'),
   ('C1', 'C', 'صغير', '{"cx": 0.5997, "cy": 0.57859, "w": 0.01356, "h": 0.02422, "rot": -1.8}', 'rect'),
-  ('C10', 'C', 'صغير', '{"cx": 0.48717, "cy": 0.82128, "w": 0.01276, "h": 0.00991, "rot": -90.0}', 'rect'),
-  ('C11', 'C', 'صغير', '{"cx": 0.47081, "cy": 0.82221, "w": 0.01356, "h": 0.01054, "rot": -90.0}', 'rect'),
-  ('C16', 'C', 'صغير', '{"cx": 0.47002, "cy": 0.78071, "w": 0.01356, "h": 0.01054, "rot": -90}', 'rect'),
-  ('C17', 'C', 'صغير', '{"cx": 0.48638, "cy": 0.77978, "w": 0.01356, "h": 0.01054, "rot": -90}', 'rect'),
   ('C18', 'C', 'صغير', '{"cx": 0.50312, "cy": 0.77947, "w": 0.01356, "h": 0.01054, "rot": -90}', 'rect'),
   ('C2', 'C', 'صغير', '{"cx": 0.59642, "cy": 0.56006, "w": 0.01334, "h": 0.0103, "rot": -3.8}', 'rect'),
   ('C3', 'C', 'صغير', '{"cx": 0.5952, "cy": 0.54643, "w": 0.01352, "h": 0.01027, "rot": -3.8}', 'rect'),
