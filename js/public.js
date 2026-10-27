@@ -112,7 +112,7 @@ q.onkeydown = e => { if (e.key === 'Enter') { const s = normDigits(q.value).trim
 startI18n();
 initFestive({ density: 70 });
 garland($('.pub-top'));
-sleigh($('.pub-top'));
+sleigh({ first: 2500 });
 $('#pub-tools').prepend(toggleButton());
 $('#pub-logo').onclick = e => { jingle(); burst(e.clientX, e.clientY, 18); };
 load(true);

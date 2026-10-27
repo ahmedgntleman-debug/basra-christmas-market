@@ -9,7 +9,7 @@ import { openBooking, openReservation, openPayment, openReminder, openCustomer, 
 import { pageReservations, pageCustomers, pageReports, pageSettings, openDailyEntry } from './pages.js';
 import { openAssistant, assistantReady } from './assistant.js';
 import { startI18n } from './i18n.js';
-import { initFestive, garland, baubles, countdown, tree, toggleButton, burst, jingle } from './festive.js';
+import { initFestive, garland, baubles, countdown, tree, toggleButton, burst, jingle, sleigh } from './festive.js';
 
 const view = () => $('#view');
 const ROUTES = {
@@ -63,6 +63,7 @@ function showLogin() {
   $('#login').hidden = false;
   $('#app').hidden = true;
   initFestive({ density: 90 });
+  if (!document.querySelector('.fx-sleigh')) sleigh({ first: 3000 });
   if (!$('#login .fx-baubles')) baubles($('#login'), [
     { x: '8%', len: 70, size: 54 }, { x: '18%', len: 130, size: 42, style: 1 }, { x: '30%', len: 40, size: 34, style: 2 },
     { x: '68%', len: 56, size: 38, style: 3 }, { x: '80%', len: 140, size: 56, style: 4 }, { x: '91%', len: 80, size: 40, style: 1 }]);
@@ -80,6 +81,7 @@ function showLogin() {
 
 function shell() {
   garland($('.top'));
+  sleigh({ first: 9000, every: [40000, 80000], when: () => !document.querySelector('.scrim') && /^#?\/?$/.test(location.hash) });
   $('.nav .foot').prepend(toggleButton());
   const nl = $('#nav-logo'); if (nl) nl.onclick = e => { jingle(); burst(e.clientX, e.clientY, 16); };
   $('#who').textContent = (S.profile.full_name || S.user.email) + ' — ' + ROLE_LABEL[S.profile.role];
@@ -283,12 +285,16 @@ function pageMap(root) {
   const editBtn = can.admin() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, 'تحرير الخريطة') : null;
   const areaBtn = can.book() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, 'حجز مساحة') : null;
   const exportBtn = h('button', { class: 'btn' }, 'تصدير الخريطة');
+  const addBtn = can.admin() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, '＋ إضافة كشك') : null;
+  const delBtn = can.admin() ? h('button', { class: 'btn danger', 'aria-pressed': 'false' }, '－ حذف كشك') : null;
+  let tool = '';
   const legend = h('div', { class: 'legend' });
   const panel = h('aside', { class: 'mappanel' });
   const box = h('div', { class: 'mapbox' });
 
   const mv = new MapView(box, {
     onSelect: (k, e) => {
+      if (tool === 'del') { removeKiosk(k); return; }
       if (editing) { selected = [k.id]; mv.setSelected(selected); drawPanel(); return; }
       if (multi || e?.shiftKey || e?.ctrlKey || e?.metaKey) {
         selected = selected.includes(k.id) ? selected.filter(x => x !== k.id) : [...selected, k.id];
@@ -301,7 +307,7 @@ function pageMap(root) {
       if (error) toast(errText(error), { error: true });
       drawPanel();
     },
-    onAddAt: (cx, cy) => addKioskAt(cx, cy),
+    onAddAt: (cx, cy) => tool === 'add' ? openAddKiosk(cx, cy) : addKioskAt(cx, cy),
     onDraw: geom => createArea(geom),
   });
   mv.setMap(E.map_url, E.map_w, E.map_h);
@@ -311,9 +317,10 @@ function pageMap(root) {
     h('div', { class: 'range' }, fromI, h('span', { class: 'hint' }, 'إلى'), toI,
       h('button', { class: 'btn small ghost', onclick: () => { fromI.value = E.start_date; toI.value = E.end_date; upd(); } }, 'كامل المهرجان'),
       h('button', { class: 'btn small ghost', onclick: () => { const t = todayISO(); fromI.value = t; toI.value = t; upd(); } }, 'اليوم')),
-    search, grpSel, multiBtn, areaBtn, exportBtn, editBtn);
+    search, grpSel, multiBtn, areaBtn, addBtn, delBtn, exportBtn, editBtn);
   const areaHint = h('div', { class: 'warnbox', hidden: true }, 'اسحب بالماوس أو بإصبعك على الخريطة لرسم المساحة المطلوب تأجيرها. للتحريك أثناء الرسم أوقف «حجز مساحة» مؤقتاً.');
-  root.replaceChildren(h('div', { class: 'mappage' }, toolbar, areaHint, legend, h('div', { class: 'mapsplit' }, box, panel)));
+  const toolHint = h('div', { class: 'warnbox', hidden: true });
+  root.replaceChildren(h('div', { class: 'mappage' }, toolbar, areaHint, toolHint, legend, h('div', { class: 'mapsplit' }, box, panel)));
 
   function statuses() {
     from = fromI.value || E.start_date; to = toI.value || E.end_date;
@@ -362,7 +369,133 @@ function pageMap(root) {
     areaBtn.setAttribute('aria-pressed', on); areaHint.hidden = !on;
     mv.setMode(on ? 'draw' : (editing ? 'edit' : 'view'));
   };
-  if (areaBtn) areaBtn.onclick = () => setArea(areaBtn.getAttribute('aria-pressed') !== 'true');
+  if (areaBtn) areaBtn.onclick = () => { setTool(''); setArea(areaBtn.getAttribute('aria-pressed') !== 'true'); };
+  // ----- add / remove kiosks (super admin) -----
+  function setTool(t) {
+    tool = t;
+    addBtn?.setAttribute('aria-pressed', t === 'add'); delBtn?.setAttribute('aria-pressed', t === 'del');
+    toolHint.hidden = !t;
+    toolHint.replaceChildren(
+      t === 'add' ? 'اضغط على المكان الفارغ في الخريطة حيث تريد إضافة الكشك الجديد.' : t === 'del' ? 'اضغط على الكشك الذي تريد حذفه من الخريطة.' : '',
+      ' ', h('button', { class: 'btn small', onclick: () => setTool('') }, 'إنهاء'));
+    if (t && areaBtn?.getAttribute('aria-pressed') === 'true') { areaBtn.setAttribute('aria-pressed', 'false'); areaHint.hidden = true; }
+    mv.setMode(t === 'add' ? 'add' : editing ? 'edit' : 'view');
+  }
+  if (addBtn) addBtn.onclick = () => setTool(tool === 'add' ? '' : 'add');
+  if (delBtn) delBtn.onclick = () => setTool(tool === 'del' ? '' : 'del');
+  function nearest(cx, cy) {
+    let best = null, bd = Infinity;
+    for (const k of S.kiosks) { const d = (k.geom.cx - cx) ** 2 + (k.geom.cy - cy) ** 2; if (d < bd && k.grp !== 'AR') { bd = d; best = k; } }
+    return best;
+  }
+  function nextCode(g) {
+    const nums = S.kiosks.filter(k => k.grp === g && new RegExp('^' + g + '\\d+$').test(k.code)).map(k => +k.code.slice(g.length));
+    return g + ((nums.length ? Math.max(...nums) : 0) + 1);
+  }
+  function openAddKiosk(cx, cy) {
+    const near = nearest(cx, cy);
+    const g0 = near?.grp || 'A';
+    const I = {
+      code: h('input', { class: 'in', value: nextCode(g0), dir: 'ltr' }),
+      grp: h('input', { class: 'in', value: g0, dir: 'ltr' }),
+      category: h('input', { class: 'in', value: near?.category || '' }),
+      size: h('select', { class: 'in' }, S.kiosks.filter(k => k.grp !== 'AR').sort((a, b) => codeSort(a.code, b.code)).map(k => h('option', { value: k.id, selected: k.id === near?.id }, 'مثل ' + k.code))),
+      price: h('input', { class: 'in', inputmode: 'decimal', value: near?.list_price == null ? '' : fmtNum(near.list_price), placeholder: 'اختياري' }),
+    };
+    I.grp.oninput = () => { const g = I.grp.value.trim().toUpperCase(); if (g) I.code.value = nextCode(g); };
+    const ok = h('button', { class: 'btn primary' }, 'إضافة الكشك');
+    const md = modal({ title: 'كشك جديد', body: [
+      h('p', { class: 'hint', style: { margin: 0 } }, 'سيظهر الكشك في المكان الذي ضغطت عليه. يمكنك تحريكه أو تغيير حجمه لاحقاً من «تحرير الخريطة».'),
+      h('div', { class: 'grid2' }, field('رقم الكشك', I.code), field('المجموعة', I.grp), field('الفئة (اختياري)', I.category), field('الحجم والاتجاه', I.size)),
+      field('السعر الاسترشادي (اختياري)', I.price)],
+      footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')] });
+    ok.onclick = async () => {
+      const code = I.code.value.trim().toUpperCase().replace(/\s+/g, '');
+      if (!code) return toast('اكتب رقم الكشك', { error: true });
+      if (kioskByCode(code)) return toast('يوجد كشك بنفس الرقم ' + code, { error: true });
+      const lp = I.price.value.trim() ? parseAmount(I.price.value) : null;
+      if (Number.isNaN(lp)) return toast('السعر غير صالح', { error: true });
+      const ref = kioskById(I.size.value);
+      const geom = ref ? { ...ref.geom, cx, cy } : { cx, cy, w: 36 / E.map_w, h: 28 / E.map_h, rot: 0 };
+      ok.disabled = true;
+      const { data, error } = await sb.from('kiosks').insert({ edition_id: E.id, code, grp: I.grp.value.trim().toUpperCase() || null, category: I.category.value.trim() || null,
+        geom, shape: ref?.shape === 'ellipse' ? 'ellipse' : 'rect', list_price: lp }).select().single();
+      ok.disabled = false;
+      if (error) return toast(/duplicate|unique/i.test(error.message) ? 'يوجد كشك بنفس الرقم' : errText(error), { error: true });
+      md.close(); setTool('');
+      await refresh();
+      selected = [data.id]; mv.setSelected(selected); drawPanel();
+      toast('تمت إضافة الكشك ' + code, { actions: [{ label: 'إضافة كشك آخر', main: true, run: () => setTool('add') }] });
+    };
+  }
+  async function removeKiosk(k) {
+    const rs = S.reservations.filter(r => r.kiosk_ids.includes(k.id));
+    const live = rs.filter(r => r.status !== 'cancelled');
+    if (rs.length) {
+      const md = modal({ title: 'لا يمكن حذف الكشك ' + k.code, body: [
+        h('p', { style: { margin: 0 } }, live.length
+          ? `على هذا الكشك ${live.length} حجز: ${live.map(r => r.customer_name || 'حجز مؤقت').join('، ')}. انقل الحجز إلى كشك آخر أو ألغِه أولاً، ثم احذف الكشك.`
+          : 'على هذا الكشك حجوزات ملغاة محفوظة في السجل، لذلك لا يُحذف. يمكنك إخفاؤه كـ«غير متاح» بدلاً من ذلك.')],
+        footer: [
+          live.length ? h('button', { class: 'btn primary', onclick: () => { md.close(); openReservation(live[0].id); } }, 'فتح الحجز') : null,
+          !live.length && k.active ? h('button', { class: 'btn primary', onclick: async () => {
+            const { error } = await sb.from('kiosks').update({ active: false, rentable: false }).eq('id', k.id);
+            md.close(); if (error) return toast(errText(error), { error: true }); await refresh(); toast('أصبح الكشك ' + k.code + ' غير متاح');
+          } }, 'جعله غير متاح') : null,
+          h('button', { class: 'btn', onclick: () => md.close() }, 'إغلاق')].filter(Boolean) });
+      return;
+    }
+    const erase = h('input', { type: 'checkbox' });
+    const ok = h('button', { class: 'btn primary' }, 'حذف الكشك');
+    mv.setSelected([k.id]);
+    const md = modal({ title: 'حذف الكشك ' + k.code, body: [
+      h('p', { style: { margin: 0 } }, 'سيُحذف الكشك من الخريطة ومن قائمة الأكشاك. لا توجد عليه حجوزات.'),
+      h('label', { class: 'check' }, erase, 'امسح رسم الكشك المطبوع على صورة الخريطة أيضاً'),
+      h('p', { class: 'hint', style: { margin: 0 } }, 'فعّل هذا الخيار إذا كان الكشك مرسوماً في صورة المخطط الأصلية، حتى لا يبقى مربعه ظاهراً بعد الحذف. يمكنك التراجع عن المسح بعد الحذف مباشرة.')],
+      footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')],
+      onClose: () => mv.setSelected(selected) });
+    ok.onclick = async () => {
+      ok.disabled = true;
+      const geom = { ...k.geom }, code = k.code;
+      const { error } = await sb.from('kiosks').delete().eq('id', k.id);
+      if (error) { ok.disabled = false; return toast(errText(error), { error: true }); }
+      md.close(); selected = selected.filter(x => x !== k.id);
+      await refresh();
+      if (erase.checked) {
+        const old = { map_url: E.map_url, map_w: E.map_w, map_h: E.map_h };
+        try {
+          await eraseFromMap([geom]);
+          toast('تم حذف الكشك ' + code + ' ومسح رسمه من الخريطة', { actions: [{ label: 'تراجع عن مسح الرسم', run: async () => {
+            const { error: e2 } = await sb.from('editions').update(old).eq('id', E.id);
+            if (e2) return toast(errText(e2), { error: true });
+            Object.assign(E, old); mv.setMap(E.map_url, E.map_w, E.map_h); toast('أُعيدت صورة الخريطة السابقة');
+          } }] });
+        } catch (e) { toast('حُذف الكشك، لكن تعذر مسح رسمه من الصورة: ' + errText(e), { error: true }); }
+      } else toast('تم حذف الكشك ' + code);
+    };
+  }
+  async function eraseFromMap(geoms) {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    const src = new URL(E.map_url, location.href).href;
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('تعذر تحميل صورة الخريطة')); img.src = src + (src.includes('?') ? '&' : '?') + 'v=' + Date.now(); });
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0);
+    ctx.fillStyle = '#fff';
+    for (const g of geoms) {
+      ctx.save(); ctx.translate(g.cx * W, g.cy * H); ctx.rotate((g.rot || 0) * Math.PI / 180);
+      const w = g.w * W * 1.2 + 6, hh = g.h * H * 1.2 + 6;
+      ctx.fillRect(-w / 2, -hh / 2, w, hh); ctx.restore();
+    }
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+    const path = `${E.id}/map-${Date.now()}.jpg`;
+    const up = await sb.storage.from('maps').upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
+    if (up.error) throw up.error;
+    const pub = sb.storage.from('maps').getPublicUrl(path).data.publicUrl;
+    const { error } = await sb.from('editions').update({ map_url: pub, map_w: E.map_w, map_h: E.map_h }).eq('id', E.id);
+    if (error) throw error;
+    E.map_url = pub; mv.setMap(pub, E.map_w, E.map_h);
+  }
   exportBtn.onclick = () => openMapExport({ E, from, to, statuses: statuses() });
   async function createArea(geom) {
     setArea(false);
@@ -390,6 +523,7 @@ function pageMap(root) {
     };
   }
   if (editBtn) editBtn.onclick = () => {
+    setTool('');
     editing = !editing; editBtn.setAttribute('aria-pressed', editing); multi = false; multiBtn.setAttribute('aria-pressed', false);
     multiBtn.hidden = editing;
     mv.setMode(editing ? 'edit' : 'view'); selected = selected.slice(-1); mv.setSelected(selected); drawPanel();

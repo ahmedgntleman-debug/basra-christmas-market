@@ -207,21 +207,133 @@ ${lights.map(([x, y], i) => `<circle class="fx-tl" cx="${x}" cy="${y}" r="4.2" s
   return b;
 }
 
-// ---------- sleigh flying across a header ----------
-export function sleigh(host) {
-  const s = el('button', 'fx-sleigh'); s.type = 'button'; s.setAttribute('aria-label', 'زلاجة بابا نويل');
-  s.innerHTML = `<svg viewBox="0 0 220 70" width="170" height="54" aria-hidden="true"><g fill="#f6e7c1">
-<path d="M150 30c6-10 14-14 20-12l6-9 3 2-4 8c5 0 8 3 9 6l9-3 1 3-9 4c1 6-3 11-9 12l-4 10h-4l3-10h-14l-6 10h-4l5-11c-4-2-6-6-2-10z"/>
-<path d="M178 9l4-7 2 1-3 6 5-3 1 2-7 4zM186 11l6-6 2 2-5 5 6-1 0 2-8 1z"/>
-<path d="M60 26h44c4 0 6 3 5 7l-4 13H62c-8 0-12-8-2-20z"/><path d="M50 52h66c6 0 8-3 9-6h4c-1 7-5 10-13 10H48z"/>
-<path d="M72 26l-2-10h12l2 10zM86 26l2-14h12l-2 14z"/><circle cx="92" cy="12" r="5"/></g>
-<path d="M110 34 L150 34" stroke="#e8b84a" stroke-width="1.6"/><circle cx="182" cy="24" r="2" fill="#d8333a"/></svg>`;
-  host.append(s);
-  let tmo;
-  const fly = () => { if (!festiveOn() || document.hidden) return schedule(); s.classList.remove('go'); void s.offsetWidth; s.classList.add('go'); schedule(); };
-  const schedule = () => { clearTimeout(tmo); tmo = setTimeout(fly, 26000 + Math.random() * 30000); };
-  s.addEventListener('click', e => { const t = el('span', 'fx-ho', 'هو هو هو! 🎅'); t.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`; document.body.append(t); setTimeout(() => t.remove(), 1600); celebrate(); });
-  setTimeout(fly, 2500);
+// ---------- Santa's sleigh: flies around the whole screen ----------
+const SLEIGH_SVG = `<svg viewBox="0 0 300 120" width="230" height="92" aria-hidden="true">
+<defs><linearGradient id="slr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e23b42"/><stop offset="1" stop-color="#9e1b22"/></linearGradient>
+<linearGradient id="slg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b88a2a"/><stop offset=".5" stop-color="#f3d27a"/><stop offset="1" stop-color="#b88a2a"/></linearGradient></defs>
+<g class="sl-deer sl-d2"><path d="M196 70c8-10 26-12 36-6l6-10 6 3-5 10c4 2 6 6 6 10" fill="none"/>
+<ellipse cx="214" cy="72" rx="20" ry="9" fill="#8b5a2b"/><path d="M200 78l-8 14M206 79l-2 16M224 78l6 14M230 76l10 12" stroke="#6b4220" stroke-width="3.5" stroke-linecap="round"/>
+<path d="M230 66q6-14 14-16l4 4q-2 8-10 14z" fill="#8b5a2b"/><circle cx="246" cy="55" r="6" fill="#8b5a2b"/><circle cx="252" cy="56" r="2.6" fill="#2b1a0e"/>
+<path d="M243 50l-4-12M239 42l-6-3M241 46l6-6M247 49l3-12M249 41l5-3" stroke="#d9b98a" stroke-width="2" stroke-linecap="round"/><circle cx="244" cy="54" r="1.2" fill="#fff"/></g>
+<g class="sl-deer sl-d1"><ellipse cx="258" cy="58" rx="19" ry="8.5" fill="#9a6532"/><path d="M245 64l-8 13M251 65l-2 15M267 64l6 13M273 62l10 11" stroke="#6b4220" stroke-width="3.5" stroke-linecap="round"/>
+<path d="M272 52q6-13 14-15l4 4q-2 8-10 13z" fill="#9a6532"/><circle cx="288" cy="42" r="6" fill="#9a6532"/><circle cx="294.5" cy="43" r="3.4" fill="#ff3b3b" class="sl-nose"/>
+<path d="M285 37l-4-12M281 29l-6-3M283 33l6-6M289 36l3-12M291 28l5-3" stroke="#d9b98a" stroke-width="2" stroke-linecap="round"/><circle cx="286" cy="41" r="1.2" fill="#fff"/></g>
+<path d="M150 74 Q200 66 238 60 M150 78 Q200 74 252 66" stroke="url(#slg)" stroke-width="1.6" fill="none"/>
+<circle cx="236" cy="63" r="2.4" fill="#f3d27a"/><circle cx="270" cy="56" r="2.4" fill="#f3d27a"/>
+<path d="M58 46 q-14 -20 4 -30 q18 -8 30 6 q8 12 -4 24z" fill="#3f7d47"/><rect x="66" y="22" width="14" height="12" rx="2" fill="#e8b84a"/><rect x="72" y="22" width="3" height="12" fill="#d8333a"/>
+<circle cx="112" cy="44" r="16" fill="url(#slr)"/><rect x="98" y="52" width="28" height="5" fill="#2b1a0e"/><rect x="109" y="51.5" width="6" height="6" rx="1" fill="#f3d27a"/>
+<circle cx="116" cy="24" r="9" fill="#f6d2b4"/><path d="M106 26 q10 18 20 0 q-2 12 -10 14 q-8 -2 -10 -14z" fill="#fff"/><circle cx="119" cy="22" r="1.3" fill="#2b1a0e"/><circle cx="121" cy="27" r="2" fill="#f08f8f"/>
+<path d="M106 20 q8 -18 26 -6 l-4 6 q-10 -6 -22 0z" fill="#d8333a"/><circle cx="133" cy="14" r="4" fill="#fff"/><rect x="104" y="17" width="22" height="5" rx="2.5" fill="#fff"/>
+<path d="M124 44 q10 4 14 14" stroke="#d8333a" stroke-width="6" stroke-linecap="round" fill="none"/><circle cx="139" cy="59" r="3.5" fill="#fff"/>
+<path d="M40 52 H150 q8 0 6 10 l-6 18 H62 q-22 0 -22 -28z" fill="url(#slr)"/><path d="M46 58 H148" stroke="#f3d27a" stroke-width="2.5"/>
+<path d="M62 70 q10 -8 20 0 q10 8 20 0 q10 -8 20 0" stroke="#f3d27a" stroke-width="1.8" fill="none"/>
+<path d="M30 96 H160 q14 0 14 -12" stroke="url(#slg)" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M30 96 q-10 0 -10 -8 q0 -6 6 -6" stroke="url(#slg)" stroke-width="4" fill="none" stroke-linecap="round"/>
+<path d="M72 80 v16 M136 80 v16" stroke="url(#slg)" stroke-width="3"/></svg>`;
+
+// "Ho ho ho" — spoken by the browser's voice when available, otherwise a synthesized deep "ho".
+function hoHoHo() {
+  try {
+    const synth = window.speechSynthesis, voices = synth?.getVoices() || [];
+    if (synth && voices.length) {
+      const u = new SpeechSynthesisUtterance('Ho! Ho! Ho! Merry Christmas!');
+      u.voice = voices.find(v => /en[-_](US|GB)/i.test(v.lang) && /male|daniel|david|george|fred|alex/i.test(v.name)) || voices.find(v => /^en/i.test(v.lang)) || null;
+      u.lang = u.voice?.lang || 'en-US'; u.pitch = 0.1; u.rate = 0.72; u.volume = 1;
+      synth.cancel(); synth.speak(u); return 2600;
+    }
+  } catch {}
+  try {
+    actx ||= new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = actx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const t = t0 + i * 0.42, o = actx.createOscillator(), g = actx.createGain(), out = actx.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(118, t); o.frequency.exponentialRampToValueAtTime(92, t + .32);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.5, t + .03); g.gain.exponentialRampToValueAtTime(.001, t + .34);
+      out.gain.value = .35; o.connect(g);
+      for (const [f, q, a] of [[480, 6, 1], [820, 8, .5], [2600, 10, .08]]) { const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q; const ga = actx.createGain(); ga.gain.value = a; g.connect(bp).connect(ga).connect(out); }
+      out.connect(actx.destination); o.start(t); o.stop(t + .4);
+    }
+  } catch {}
+  return 1500;
+}
+
+// Jingle Bells (traditional, public domain) — bell melody, bass and sleigh-bell shaker.
+let music = null;
+export function stopMusic() { if (music) { music.stop(); music = null; } }
+export function jingleBells() {
+  stopMusic();
+  try {
+    actx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const N = { C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392, A4: 440, C3: 130.81, F3: 174.61, G3: 196, D3: 146.83 };
+    const A = 'E4 1,E4 1,E4 2,E4 1,E4 1,E4 2,E4 1,G4 1,C4 1.5,D4 .5,E4 4,F4 1,F4 1,F4 1.5,F4 .5,F4 1,E4 1,E4 1,E4 .5,E4 .5';
+    const tune = (A + ',E4 1,D4 1,D4 1,E4 1,D4 2,G4 2,' + A + ',G4 1,G4 1,F4 1,D4 1,C4 4').split(',').map(x => { const [n, d] = x.split(' '); return [N[n], +d]; });
+    const bass = ['C3', 'C3', 'C3', 'C3', 'F3', 'C3', 'D3', 'G3', 'C3', 'C3', 'C3', 'C3', 'F3', 'C3', 'G3', 'C3'];
+    const beat = 0.3, t0 = actx.currentTime + 0.08;
+    const master = actx.createGain(); master.gain.value = 0.5; master.connect(actx.destination);
+    const nodes = [];
+    const bell = (f, t, d, vol = .22) => {
+      for (const [m, a, dec] of [[2, 1, 1], [4, 0.35, .6], [5.95, 0.18, .35], [8.1, 0.08, .2]]) {
+        const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.value = f * m;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * a, t + .006); g.gain.exponentialRampToValueAtTime(.0001, t + Math.max(.25, d * beat * dec + .15));
+        o.connect(g).connect(master); o.start(t); o.stop(t + d * beat + .5); nodes.push(o);
+      }
+    };
+    const bassNote = (f, t, d) => { const o = actx.createOscillator(), g = actx.createGain(); o.type = 'triangle'; o.frequency.value = f; g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.16, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(g).connect(master); o.start(t); o.stop(t + d + .05); nodes.push(o); };
+    const noise = actx.createBuffer(1, actx.sampleRate * .12, actx.sampleRate); { const ch = noise.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / ch.length, 3); }
+    const shaker = t => { const src = actx.createBufferSource(), hp = actx.createBiquadFilter(), g = actx.createGain(); src.buffer = noise; hp.type = 'highpass'; hp.frequency.value = 6500; g.gain.value = .22; src.connect(hp).connect(g).connect(master); src.start(t); nodes.push(src); };
+    let t = t0;
+    for (const [f, d] of tune) { bell(f, t, d); t += d * beat; }
+    const total = t - t0;
+    for (let i = 0; i < bass.length; i++) bassNote(N[bass[i]], t0 + i * 4 * beat, 4 * beat * .9);
+    for (let b = 0; b < total / beat * 2; b++) shaker(t0 + b * beat / 2);
+    const end = setTimeout(() => { music = null; }, total * 1000 + 800);
+    music = { stop() { clearTimeout(end); const now = actx.currentTime; master.gain.cancelScheduledValues(now); master.gain.setValueAtTime(master.gain.value, now); master.gain.linearRampToValueAtTime(0, now + .25); setTimeout(() => nodes.forEach(n => { try { n.stop(); } catch {} }), 300); } };
+  } catch {}
+}
+
+export function sleigh({ first = 2500, every = [24000, 50000], when = () => true } = {}) {
+  const s = el('button', 'fx-sleigh'); s.type = 'button'; s.setAttribute('aria-label', 'زلاجة بابا نويل — اضغط عليها');
+  s.innerHTML = `<span class="sl-in">${SLEIGH_SVG}</span>`;
+  document.body.append(s);
+  let tmo, anim = null, trail = null, busy = false;
+  const schedule = () => { clearTimeout(tmo); tmo = setTimeout(fly, every[0] + Math.random() * (every[1] - every[0])); };
+  const fly = () => {
+    if (!festiveOn() || document.hidden || anim || !when()) return schedule();
+    const W = innerWidth, H = innerHeight, sw = Math.min(230, W * .5), ltr = Math.random() < .5;
+    s.style.setProperty('--sw', sw + 'px');
+    const x0 = ltr ? -sw - 20 : W + 20, x1 = ltr ? W + 20 : -sw - 20;
+    const ys = Array.from({ length: 6 }, () => H * (.08 + Math.random() * .7));
+    const frames = ys.map((y, i) => {
+      const p = i / (ys.length - 1), x = x0 + (x1 - x0) * p;
+      const tilt = i < ys.length - 1 ? Math.max(-14, Math.min(14, (ys[i + 1] - y) / 14)) : 0;
+      return { transform: `translate(${x}px, ${y}px) rotate(${ltr ? tilt : -tilt}deg) scaleX(${ltr ? 1 : -1})`, offset: p };
+    });
+    s.classList.add('go');
+    anim = s.animate(frames, { duration: Math.max(9000, W * 9), easing: 'linear' });
+    trail = setInterval(() => {
+      const r = s.getBoundingClientRect(); if (!r.width) return;
+      const p = el('span', 'fx-p', Math.random() < .5 ? '✦' : '✧');
+      const x = ltr ? r.left + 10 : r.right - 10;
+      p.style.cssText = `left:${x}px;top:${r.top + r.height * .75}px;color:${COLORS[Math.floor(Math.random() * 3) + 1]};font-size:${8 + Math.random() * 8}px`;
+      document.body.append(p);
+      p.animate([{ opacity: 1, transform: 'translate(-50%,-50%) scale(1)' }, { opacity: 0, transform: `translate(-50%, calc(-50% + ${20 + Math.random() * 30}px)) scale(.3)` }], { duration: 1100 }).onfinish = () => p.remove();
+    }, 90);
+    anim.onfinish = () => { clearInterval(trail); s.classList.remove('go'); anim = null; schedule(); };
+  };
+  s.addEventListener('click', e => {
+    if (music) { stopMusic(); return; }
+    if (busy) return; busy = true;
+    const t = el('span', 'fx-ho', 'هو هو هو! 🎅'); t.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`; document.body.append(t); setTimeout(() => t.remove(), 2200);
+    burst(e.clientX, e.clientY, 26);
+    anim?.pause(); s.classList.add('hohoho');
+    const wait = hoHoHo();
+    setTimeout(() => {
+      s.classList.remove('hohoho'); anim?.play(); busy = false;
+      jingleBells();
+      const n = el('span', 'fx-ho fx-music', '🎶 Jingle Bells — اضغط على الزلاجة لإيقافها'); n.style.cssText = `left:${innerWidth / 2}px;top:${innerHeight - 40}px`; document.body.append(n); setTimeout(() => n.remove(), 3500);
+    }, wait);
+  });
+  tmo = setTimeout(fly, first);
   return s;
 }
 
@@ -229,7 +341,7 @@ export function sleigh(host) {
 export function toggleButton(cls = '') {
   const b = el('button', 'fx-toggle ' + cls); b.type = 'button';
   const paint = () => { const on = festiveOn(); b.textContent = on ? '❄ الزينة: تعمل' : '❄ الزينة: متوقفة'; b.setAttribute('aria-pressed', on); document.documentElement.classList.toggle('fx-off', !on); };
-  b.onclick = () => { store.set(festiveOn() ? 'off' : 'on'); paint(); if (festiveOn()) { startSnow(document.documentElement.dataset.snow || 40); celebrate(); } else snow?.stop(); };
+  b.onclick = () => { store.set(festiveOn() ? 'off' : 'on'); paint(); if (festiveOn()) { startSnow(document.documentElement.dataset.snow || 40); celebrate(); } else { snow?.stop(); stopMusic(); try { speechSynthesis.cancel(); } catch {} } };
   paint();
   return b;
 }
