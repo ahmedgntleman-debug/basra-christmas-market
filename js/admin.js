@@ -290,7 +290,8 @@ function pageMap(root) {
   const exportBtn = h('button', { class: 'btn' }, 'تصدير الخريطة');
   const addBtn = can.admin() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, '＋ إضافة كشك') : null;
   const delBtn = can.admin() ? h('button', { class: 'btn danger', 'aria-pressed': 'false' }, '－ حذف كشك') : null;
-  let tool = '';
+  const swapBtn = can.book() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, '⇄ تبديل كشكين') : null;
+  let tool = '', swapA = null;
   const legend = h('div', { class: 'legend' });
   const panel = h('aside', { class: 'mappanel' });
   const box = h('div', { class: 'mapbox' });
@@ -298,6 +299,7 @@ function pageMap(root) {
   const mv = new MapView(box, {
     onSelect: (k, e) => {
       if (tool === 'del') { removeKiosk(k); return; }
+      if (tool === 'swap') { pickSwap(k); return; }
       if (editing) { selected = [k.id]; mv.setSelected(selected); drawPanel(); return; }
       if (multi || e?.shiftKey || e?.ctrlKey || e?.metaKey) {
         selected = selected.includes(k.id) ? selected.filter(x => x !== k.id) : [...selected, k.id];
@@ -320,7 +322,7 @@ function pageMap(root) {
     h('div', { class: 'range' }, fromI, h('span', { class: 'hint' }, 'إلى'), toI,
       h('button', { class: 'btn small ghost', onclick: () => { fromI.value = E.start_date; toI.value = E.end_date; upd(); } }, 'كامل المهرجان'),
       h('button', { class: 'btn small ghost', onclick: () => { const t = todayISO(); fromI.value = t; toI.value = t; upd(); } }, 'اليوم')),
-    search, grpSel, multiBtn, areaBtn, addBtn, delBtn, exportBtn, editBtn);
+    search, grpSel, multiBtn, areaBtn, swapBtn, addBtn, delBtn, exportBtn, editBtn);
   const areaHint = h('div', { class: 'warnbox', hidden: true }, 'اسحب بالماوس أو بإصبعك على الخريطة لرسم المساحة المطلوب تأجيرها. للتحريك أثناء الرسم أوقف «حجز مساحة» مؤقتاً.');
   const toolHint = h('div', { class: 'warnbox', hidden: true });
   root.replaceChildren(h('div', { class: 'mappage' }, toolbar, areaHint, toolHint, legend, h('div', { class: 'mapsplit' }, box, panel)));
@@ -375,17 +377,68 @@ function pageMap(root) {
   if (areaBtn) areaBtn.onclick = () => { setTool(''); setArea(areaBtn.getAttribute('aria-pressed') !== 'true'); };
   // ----- add / remove kiosks (super admin) -----
   function setTool(t) {
-    tool = t;
-    addBtn?.setAttribute('aria-pressed', t === 'add'); delBtn?.setAttribute('aria-pressed', t === 'del');
+    tool = t; if (t !== 'swap') swapA = null;
+    addBtn?.setAttribute('aria-pressed', t === 'add'); delBtn?.setAttribute('aria-pressed', t === 'del'); swapBtn?.setAttribute('aria-pressed', t === 'swap');
     toolHint.hidden = !t;
     toolHint.replaceChildren(
-      t === 'add' ? 'اضغط على المكان الفارغ في الخريطة حيث تريد إضافة الكشك الجديد.' : t === 'del' ? 'اضغط على الكشك الذي تريد حذفه من الخريطة.' : '',
+      t === 'add' ? 'اضغط على المكان الفارغ في الخريطة حيث تريد إضافة الكشك الجديد.' : t === 'del' ? 'اضغط على الكشك الذي تريد حذفه من الخريطة.'
+        : t === 'swap' ? (swapA ? `الكشك الأول: ${swapA.code} — الآن اضغط على الكشك الذي تريد التبديل معه.` : 'اضغط على الكشك الأول الذي تريد تبديله.') : '',
       ' ', h('button', { class: 'btn small', onclick: () => setTool('') }, 'إنهاء'));
     if (t && areaBtn?.getAttribute('aria-pressed') === 'true') { areaBtn.setAttribute('aria-pressed', 'false'); areaHint.hidden = true; }
     mv.setMode(t === 'add' ? 'add' : editing ? 'edit' : 'view');
   }
   if (addBtn) addBtn.onclick = () => setTool(tool === 'add' ? '' : 'add');
   if (delBtn) delBtn.onclick = () => setTool(tool === 'del' ? '' : 'del');
+  if (swapBtn) swapBtn.onclick = () => setTool(tool === 'swap' ? '' : 'swap');
+  // ----- switch two kiosks -----
+  function startSwap(k) { setTool('swap'); pickSwap(k); }
+  function pickSwap(k) {
+    if (!swapA || swapA.id === k.id) { swapA = k; selected = [k.id]; mv.setSelected(selected); drawPanel(); setTool('swap'); return; }
+    const a = swapA, b = k;
+    mv.setSelected([a.id, b.id]);
+    openSwap(a, b);
+  }
+  function openSwap(a, b) {
+    const liveOn = k => S.reservations.filter(r => r.status !== 'cancelled' && !r.hold_expired && r.kiosk_ids.includes(k.id)).sort((x, y) => x.start_date.localeCompare(y.start_date));
+    const side = k => {
+      const rs = liveOn(k);
+      return h('div', { class: 'swap-side' },
+        h('div', { class: 'swap-code' }, k.code),
+        h('div', { class: 'hint' }, [k.grp && 'مجموعة ' + k.grp, k.category, k.list_price != null ? 'سعر ' + fmtNum(k.list_price) : null].filter(Boolean).join(' · ') || '—'),
+        rs.length ? rs.map(r => h('div', { class: 'swap-res' }, h('strong', {}, r.customer_name || 'حجز مؤقت'), h('span', { class: 'hint' }, `${fmtDate(r.start_date)} – ${fmtDate(r.end_date)}`),
+          r.kiosk_codes.length > 1 ? h('span', { class: 'hint' }, 'ضمن حجز: ' + r.kiosk_codes.join('، ')) : null))
+          : h('div', { class: 'swap-res empty' }, 'لا توجد حجوزات — متوفر'));
+    };
+    const both = S.reservations.filter(r => r.status !== 'cancelled' && r.kiosk_ids.includes(a.id) && r.kiosk_ids.includes(b.id));
+    const modeB = h('input', { type: 'radio', name: 'swapmode', value: 'bookings', checked: true });
+    const modeP = h('input', { type: 'radio', name: 'swapmode', value: 'position' });
+    const ok = h('button', { class: 'btn primary' }, '⇄ تنفيذ التبديل');
+    const md = modal({ title: `تبديل ${a.code} و ${b.code}`, wide: true, body: [
+      h('div', { class: 'swap-grid' }, side(a), h('div', { class: 'swap-arrow', 'aria-hidden': 'true' }, '⇄'), side(b)),
+      h('label', { class: 'check swap-opt' }, modeB, h('span', {}, h('b', {}, 'تبديل الحجوزات بين الكشكين'), h('br'),
+        h('span', { class: 'hint' }, `كل حجز على ${a.code} ينتقل إلى ${b.code} والعكس، مع دفعاته ومبالغه كما هي. استخدمه عندما يتبادل مشاركان مكانيهما.`))),
+      can.admin() ? h('label', { class: 'check swap-opt' }, modeP, h('span', {}, h('b', {}, 'تبديل مكان الكشكين على الخريطة'), h('br'),
+        h('span', { class: 'hint' }, 'يبقى كل حجز على رقم كشكه، لكن موقعي الكشكين يتبادلان على الخريطة. استخدمه عند نقل الكشكين فعلياً في الموقع.'))) : null,
+      both.length ? h('p', { class: 'warnbox' }, `الحجز ${both.map(r => r.customer_name).join('، ')} يشمل الكشكين معاً، لذلك يبقى كما هو.`) : null,
+      h('p', { class: 'hint', style: { margin: 0 } }, 'الأسعار المتفق عليها لا تتغير. العقود المطبوعة سابقاً تبقى بالرقم القديم؛ افتح العقد من الحجز لطباعته بالرقم الجديد.')],
+      footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')],
+      onClose: () => { swapA = null; if (tool === 'swap') setTool(''); mv.setSelected(selected); } });
+    ok.onclick = async () => {
+      ok.disabled = true;
+      const mode = modeP.checked ? 'position' : 'bookings';
+      const { data, error } = await sb.rpc('swap_kiosks', { p_a: a.id, p_b: b.id, p_mode: mode });
+      ok.disabled = false;
+      if (error) return toast(errText(error), { error: true });
+      md.close(); setTool('');
+      await refresh();
+      selected = [b.id]; mv.setSelected(selected); drawPanel();
+      toast(data || 'تم التبديل', { actions: [{ label: 'تراجع', run: async () => {
+        const { error: e2 } = await sb.rpc('swap_kiosks', { p_a: a.id, p_b: b.id, p_mode: mode });
+        if (e2) return toast(errText(e2), { error: true });
+        await refresh(); toast('تم التراجع عن التبديل');
+      } }] });
+    };
+  }
   function nearest(cx, cy) {
     let best = null, bd = Infinity;
     for (const k of S.kiosks) { const d = (k.geom.cx - cx) ** 2 + (k.geom.cy - cy) ** 2; if (d < bd && k.grp !== 'AR') { bd = d; best = k; } }
@@ -573,6 +626,7 @@ function pageMap(root) {
         from: firstGap.s > from ? firstGap.s : (from >= firstGap.s && from <= firstGap.e ? from : firstGap.s),
         to: firstGap.e < to ? firstGap.e : to >= firstGap.s && to <= firstGap.e ? to : firstGap.e,
       }) }, 'حجز هذا الكشك') : null,
+      can.book() ? h('button', { class: 'btn', onclick: () => startSwap(k) }, '⇄ تبديل مع كشك آخر') : null,
       s === 'partial' ? h('p', { class: 'hint', style: { margin: 0 } }, 'محجوز لجزء من الفترة المعروضة فقط، وباقي الأيام متاحة للحجز.') : null,
       gaps.length && live.length ? h('div', { class: 'hint' }, 'أيام متوفرة: ', gaps.map(g => g.s === g.e ? fmtDate(g.s) : `${fmtDate(g.s)}–${fmtDate(g.e)}`).join('، ')) : null,
       !k.active || !k.rentable ? h('p', { class: 'hint' }, 'هذا الكشك غير متاح للإيجار.') : null,

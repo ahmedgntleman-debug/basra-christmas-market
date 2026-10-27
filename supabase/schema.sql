@@ -755,3 +755,38 @@ create policy ledger_write on public.ledger for all to authenticated
 revoke all on public.ledger from anon;
 grant select, insert, update, delete on public.ledger to authenticated;
 do $$ begin begin alter publication supabase_realtime add table public.ledger; exception when others then null; end; end $$;
+-- ---------------------------------------------------------------------
+-- Switch two kiosks: exchange their bookings (tenants move together with
+-- their payments) or exchange their places on the map. One atomic step.
+-- ---------------------------------------------------------------------
+create or replace function public.swap_kiosks(p_a uuid, p_b uuid, p_mode text default 'bookings') returns text
+language plpgsql security invoker set search_path = public as $$
+declare ka kiosks; kb kiosks; na int; nb int; g jsonb; sh text; ra uuid[]; rb uuid[];
+begin
+  select * into ka from kiosks where id = p_a;
+  select * into kb from kiosks where id = p_b;
+  if ka.id is null or kb.id is null then raise exception 'الكشك غير موجود'; end if;
+  if ka.id = kb.id then raise exception 'اختر كشكين مختلفين'; end if;
+  if ka.edition_id <> kb.edition_id then raise exception 'الكشكان من نسختين مختلفتين'; end if;
+  if p_mode = 'position' then
+    if not public.has_role('super_admin') then raise exception 'تبديل المكان على الخريطة للمدير العام فقط' using errcode = '42501'; end if;
+    g := ka.geom; sh := ka.shape;
+    update kiosks set geom = kb.geom, shape = kb.shape where id = ka.id;
+    update kiosks set geom = g, shape = sh where id = kb.id;
+    return format('تم تبديل مكان %s و %s على الخريطة', ka.code, kb.code);
+  end if;
+  if not public.has_role('super_admin','reservations') then raise exception 'ليس لديك صلاحية تعديل الحجوزات' using errcode = '42501'; end if;
+  perform public.release_expired_holds();
+  -- reservations that already hold both kiosks stay as they are
+  select coalesce(array_agg(rk.reservation_id), '{}') into ra from reservation_kiosks rk
+   where rk.kiosk_id = p_a and not exists (select 1 from reservation_kiosks x where x.reservation_id = rk.reservation_id and x.kiosk_id = p_b);
+  select coalesce(array_agg(rk.reservation_id), '{}') into rb from reservation_kiosks rk
+   where rk.kiosk_id = p_b and not exists (select 1 from reservation_kiosks x where x.reservation_id = rk.reservation_id and x.kiosk_id = p_a);
+  na := coalesce(array_length(ra, 1), 0); nb := coalesce(array_length(rb, 1), 0);
+  delete from reservation_kiosks where (kiosk_id = p_a and reservation_id = any(ra)) or (kiosk_id = p_b and reservation_id = any(rb));
+  insert into reservation_kiosks(reservation_id, kiosk_id) select r, p_b from unnest(ra) r;
+  insert into reservation_kiosks(reservation_id, kiosk_id) select r, p_a from unnest(rb) r;
+  return format('تم التبديل: %s حجز انتقل من %s إلى %s، و%s حجز من %s إلى %s', na, ka.code, kb.code, nb, kb.code, ka.code);
+end $$;
+revoke execute on function public.swap_kiosks(uuid, uuid, text) from anon, public;
+grant execute on function public.swap_kiosks(uuid, uuid, text) to authenticated;

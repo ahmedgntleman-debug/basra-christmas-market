@@ -234,3 +234,15 @@ table.t tfoot td { background: #fdf7ee; }
 .login-card .brand small { font-family: var(--font); }
 .login-card .btn.primary { min-height: 46px; font-size: 16px; }
 #login .fx-baubles { position: fixed; }
+
+/* switch two kiosks */
+.swap-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch; }
+.swap-side { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; background: #fffdf9; }
+.swap-code { font-family: var(--display); font-size: 34px; line-height: 1; color: var(--wine); }
+.swap-res { display: flex; flex-direction: column; border-top: 1px dashed var(--line-2); padding-top: 6px; }
+.swap-res.empty { color: var(--ok); font-weight: 600; }
+.swap-arrow { align-self: center; font-size: 30px; color: var(--brass); }
+.swap-opt { align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.swap-opt:has(input:checked) { border-color: var(--wine); background: #fff6f4; }
+.swap-opt input { margin-top: 4px; }
+@media (max-width: 640px) { .swap-grid { grid-template-columns: 1fr; } .swap-arrow { transform: rotate(90deg); justify-self: center; } }

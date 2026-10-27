@@ -8,6 +8,17 @@ export function setLang(l) { try { localStorage.setItem('bcm.lang', l); } catch 
 export const isEn = () => LANG === 'en';
 
 const D = {
+  '⇄ تبديل كشكين': '⇄ Switch two kiosks',
+  '⇄ تبديل مع كشك آخر': '⇄ Switch with another kiosk',
+  '⇄ تنفيذ التبديل': '⇄ Switch now',
+  'اضغط على الكشك الأول الذي تريد تبديله.': 'Tap the first kiosk you want to switch.',
+  'تبديل الحجوزات بين الكشكين': 'Swap the bookings between the two kiosks',
+  'تبديل مكان الكشكين على الخريطة': 'Swap the two kiosks’ places on the map',
+  'لا توجد حجوزات — متوفر': 'No bookings — available',
+  'تم التراجع عن التبديل': 'Switch undone',
+  'تراجع': 'Undo',
+  'الأسعار المتفق عليها لا تتغير. العقود المطبوعة سابقاً تبقى بالرقم القديم؛ افتح العقد من الحجز لطباعته بالرقم الجديد.': 'Agreed prices do not change. Contracts printed earlier keep the old number; open the contract from the booking to print it with the new one.',
+  'يبقى كل حجز على رقم كشكه، لكن موقعي الكشكين يتبادلان على الخريطة. استخدمه عند نقل الكشكين فعلياً في الموقع.': 'Each booking keeps its kiosk number, but the two kiosks swap positions on the map. Use it when the kiosks are physically moved on site.',
   // P&L
   'الأرباح والخسائر': 'Profit & Loss',
   'قائمة الأرباح والخسائر': 'Profit & Loss statement',
@@ -282,6 +293,10 @@ const P = [
   [/^تم استيراد (\d+) قيد$/, '$1 entries imported'],
   [/^هامش صافي (.+)$/, 'Net margin $1'],
   [/^هامش (.+)$/, 'Margin $1'],
+  [/^تبديل (\S+) و (\S+)$/, 'Switch $1 and $2'],
+  [/^الكشك الأول: (\S+) — الآن اضغط على الكشك الذي تريد التبديل معه\.$/, 'First kiosk: $1 — now tap the kiosk to switch with.'],
+  [/^تم التبديل: (\d+) حجز انتقل من (\S+) إلى (\S+)، و(\d+) حجز من (\S+) إلى (\S+)$/, 'Switched: $1 booking(s) moved from $2 to $3, and $4 from $5 to $6'],
+  [/^كل حجز على (\S+) ينتقل إلى (\S+) والعكس، مع دفعاته ومبالغه كما هي\. استخدمه عندما يتبادل مشاركان مكانيهما\.$/, 'Every booking on $1 moves to $2 and vice versa, with its payments unchanged. Use it when two participants trade places.'],
   [/^🎄 المهرجان قائم الآن — اليوم (\d+) من (\d+)$/, '🎄 The festival is on — day $1 of $2'],
   [/^(\d+) كشك بحاجة لتأكيد الرقم: (.*)$/, '$1 kiosk(s) need number verification: $2'],
   [/^(\d+) أكشاك محددة$/, '$1 kiosks selected'],
