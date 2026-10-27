@@ -790,3 +790,27 @@ begin
 end $$;
 revoke execute on function public.swap_kiosks(uuid, uuid, text) from anon, public;
 grant execute on function public.swap_kiosks(uuid, uuid, text) to authenticated;
+-- ---------------------------------------------------------------------
+-- Delete a kiosk permanently. Cancelled bookings stay in the history
+-- (their notes record the old kiosk number); active bookings block it.
+-- ---------------------------------------------------------------------
+create or replace function public.delete_kiosk(p_kiosk uuid) returns text
+language plpgsql security invoker set search_path = public as $$
+declare k kiosks; v_live text;
+begin
+  if not public.has_role('super_admin') then raise exception 'حذف الأكشاك للمدير العام فقط' using errcode = '42501'; end if;
+  select * into k from kiosks where id = p_kiosk;
+  if k.id is null then raise exception 'الكشك غير موجود'; end if;
+  perform public.release_expired_holds();
+  select string_agg(coalesce(c.name, 'حجز مؤقت'), '، ') into v_live
+  from reservation_kiosks rk join reservations r on r.id = rk.reservation_id left join customers c on c.id = r.customer_id
+  where rk.kiosk_id = p_kiosk and r.status <> 'cancelled';
+  if v_live is not null then raise exception 'على الكشك % حجوزات قائمة: %. انقلها أو ألغِها أولاً', k.code, v_live; end if;
+  update reservations set notes = concat_ws(' | ', nullif(notes, ''), 'كان على الكشك ' || k.code || ' (حُذف من الخريطة)')
+  where id in (select reservation_id from reservation_kiosks where kiosk_id = p_kiosk);
+  delete from reservation_kiosks where kiosk_id = p_kiosk;
+  delete from kiosks where id = p_kiosk;
+  return k.code;
+end $$;
+revoke execute on function public.delete_kiosk(uuid) from anon, public;
+grant execute on function public.delete_kiosk(uuid) to authenticated;

@@ -8,6 +8,11 @@ export function setLang(l) { try { localStorage.setItem('bcm.lang', l); } catch 
 export const isEn = () => LANG === 'en';
 
 const D = {
+  '↺ إعادة الكشك للحجز': '↺ Make bookable again',
+  'حذف من الخريطة نهائياً': 'Delete from the map permanently',
+  'جعل الكشك غير متاح': 'Make kiosk unavailable',
+  'هذا الكشك غير متاح للإيجار.': 'This kiosk is not offered for rent.',
+  'سيُحذف الكشك نهائياً من الخريطة ومن قائمة الأكشاك.': 'The kiosk will be permanently removed from the map and the kiosk list.',
   '⇄ تبديل كشكين': '⇄ Switch two kiosks',
   '⇄ تبديل مع كشك آخر': '⇄ Switch with another kiosk',
   '⇄ تنفيذ التبديل': '⇄ Switch now',
@@ -297,6 +302,8 @@ const P = [
   [/^الكشك الأول: (\S+) — الآن اضغط على الكشك الذي تريد التبديل معه\.$/, 'First kiosk: $1 — now tap the kiosk to switch with.'],
   [/^تم التبديل: (\d+) حجز انتقل من (\S+) إلى (\S+)، و(\d+) حجز من (\S+) إلى (\S+)$/, 'Switched: $1 booking(s) moved from $2 to $3, and $4 from $5 to $6'],
   [/^كل حجز على (\S+) ينتقل إلى (\S+) والعكس، مع دفعاته ومبالغه كما هي\. استخدمه عندما يتبادل مشاركان مكانيهما\.$/, 'Every booking on $1 moves to $2 and vice versa, with its payments unchanged. Use it when two participants trade places.'],
+  [/^أُعيد الكشك (\S+) وأصبح متاحاً للحجز$/, 'Kiosk $1 is bookable again'],
+  [/^أصبح الكشك (\S+) غير متاح$/, 'Kiosk $1 is now unavailable'],
   [/^🎄 المهرجان قائم الآن — اليوم (\d+) من (\d+)$/, '🎄 The festival is on — day $1 of $2'],
   [/^(\d+) كشك بحاجة لتأكيد الرقم: (.*)$/, '$1 kiosk(s) need number verification: $2'],
   [/^(\d+) أكشاك محددة$/, '$1 kiosks selected'],

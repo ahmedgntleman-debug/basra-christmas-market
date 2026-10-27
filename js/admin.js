@@ -486,26 +486,20 @@ function pageMap(root) {
   }
   async function removeKiosk(k) {
     const rs = S.reservations.filter(r => r.kiosk_ids.includes(k.id));
-    const live = rs.filter(r => r.status !== 'cancelled');
-    if (rs.length) {
+    const live = rs.filter(r => r.status !== 'cancelled' && !r.hold_expired);
+    if (live.length) {
       const md = modal({ title: 'لا يمكن حذف الكشك ' + k.code, body: [
-        h('p', { style: { margin: 0 } }, live.length
-          ? `على هذا الكشك ${live.length} حجز: ${live.map(r => r.customer_name || 'حجز مؤقت').join('، ')}. انقل الحجز إلى كشك آخر أو ألغِه أولاً، ثم احذف الكشك.`
-          : 'على هذا الكشك حجوزات ملغاة محفوظة في السجل، لذلك لا يُحذف. يمكنك إخفاؤه كـ«غير متاح» بدلاً من ذلك.')],
-        footer: [
-          live.length ? h('button', { class: 'btn primary', onclick: () => { md.close(); openReservation(live[0].id); } }, 'فتح الحجز') : null,
-          !live.length && k.active ? h('button', { class: 'btn primary', onclick: async () => {
-            const { error } = await sb.from('kiosks').update({ active: false, rentable: false }).eq('id', k.id);
-            md.close(); if (error) return toast(errText(error), { error: true }); await refresh(); toast('أصبح الكشك ' + k.code + ' غير متاح');
-          } }, 'جعله غير متاح') : null,
-          h('button', { class: 'btn', onclick: () => md.close() }, 'إغلاق')].filter(Boolean) });
+        h('p', { style: { margin: 0 } }, `على هذا الكشك ${live.length} حجز: ${live.map(r => r.customer_name || 'حجز مؤقت').join('، ')}. انقل الحجز إلى كشك آخر أو ألغِه أولاً، ثم احذف الكشك.`)],
+        footer: [h('button', { class: 'btn primary', onclick: () => { md.close(); openReservation(live[0].id); } }, 'فتح الحجز'),
+          h('button', { class: 'btn', onclick: () => md.close() }, 'إغلاق')] });
       return;
     }
     const erase = h('input', { type: 'checkbox' });
     const ok = h('button', { class: 'btn primary' }, 'حذف الكشك');
     mv.setSelected([k.id]);
     const md = modal({ title: 'حذف الكشك ' + k.code, body: [
-      h('p', { style: { margin: 0 } }, 'سيُحذف الكشك من الخريطة ومن قائمة الأكشاك. لا توجد عليه حجوزات.'),
+      h('p', { style: { margin: 0 } }, 'سيُحذف الكشك نهائياً من الخريطة ومن قائمة الأكشاك.'),
+      rs.length ? h('p', { class: 'warnbox' }, `على هذا الكشك ${rs.length} حجز ملغى (${rs.map(r => r.customer_name || 'حجز مؤقت').join('، ')}). ستبقى هذه الحجوزات في السجل مع ملاحظة برقم الكشك المحذوف.`) : null,
       h('label', { class: 'check' }, erase, 'امسح رسم الكشك المطبوع على صورة الخريطة أيضاً'),
       h('p', { class: 'hint', style: { margin: 0 } }, 'فعّل هذا الخيار إذا كان الكشك مرسوماً في صورة المخطط الأصلية، حتى لا يبقى مربعه ظاهراً بعد الحذف. يمكنك التراجع عن المسح بعد الحذف مباشرة.')],
       footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')],
@@ -513,7 +507,7 @@ function pageMap(root) {
     ok.onclick = async () => {
       ok.disabled = true;
       const geom = { ...k.geom }, code = k.code;
-      const { error } = await sb.from('kiosks').delete().eq('id', k.id);
+      const { error } = await sb.rpc('delete_kiosk', { p_kiosk: k.id });
       if (error) { ok.disabled = false; return toast(errText(error), { error: true }); }
       md.close(); selected = selected.filter(x => x !== k.id);
       await refresh();
@@ -629,7 +623,20 @@ function pageMap(root) {
       can.book() ? h('button', { class: 'btn', onclick: () => startSwap(k) }, '⇄ تبديل مع كشك آخر') : null,
       s === 'partial' ? h('p', { class: 'hint', style: { margin: 0 } }, 'محجوز لجزء من الفترة المعروضة فقط، وباقي الأيام متاحة للحجز.') : null,
       gaps.length && live.length ? h('div', { class: 'hint' }, 'أيام متوفرة: ', gaps.map(g => g.s === g.e ? fmtDate(g.s) : `${fmtDate(g.s)}–${fmtDate(g.e)}`).join('، ')) : null,
-      !k.active || !k.rentable ? h('p', { class: 'hint' }, 'هذا الكشك غير متاح للإيجار.') : null,
+      !k.active || !k.rentable ? h('div', { class: 'warnbox disabled-box' },
+        h('span', {}, 'هذا الكشك غير متاح للإيجار.'),
+        can.admin() ? h('div', { class: 'pp-tools' },
+          h('button', { class: 'btn small pine', onclick: async () => {
+            const { error } = await sb.from('kiosks').update({ active: true, rentable: true }).eq('id', k.id);
+            if (error) return toast(errText(error), { error: true });
+            await refresh(); toast('أُعيد الكشك ' + k.code + ' وأصبح متاحاً للحجز');
+          } }, '↺ إعادة الكشك للحجز'),
+          h('button', { class: 'btn small danger', onclick: () => removeKiosk(k) }, 'حذف من الخريطة نهائياً')) : null) : null,
+      can.admin() && k.active && k.rentable && !live.length ? h('button', { class: 'btn ghost small', style: { alignSelf: 'flex-start' }, onclick: async () => {
+        const { error } = await sb.from('kiosks').update({ active: false, rentable: false }).eq('id', k.id);
+        if (error) return toast(errText(error), { error: true });
+        await refresh(); toast('أصبح الكشك ' + k.code + ' غير متاح', { actions: [{ label: 'تراجع', run: async () => { await sb.from('kiosks').update({ active: true, rentable: true }).eq('id', k.id); await refresh(); } }] });
+      } }, 'جعل الكشك غير متاح') : null,
       h('h3', {}, rs.length ? 'الحجوزات' : 'لا توجد حجوزات على هذا الكشك'),
       rs.map(r => h('article', { class: 'rescard' + (r.status === 'cancelled' ? ' off' : ''), onclick: () => openReservation(r.id), tabindex: 0, onkeydown: e => e.key === 'Enter' && openReservation(r.id) },
         h('div', { class: 'rc-top' }, h('strong', {}, r.customer_name || 'حجز مؤقت'), h('span', { style: { display: 'flex', gap: '4px' } }, badge('res', r.status, RES_LABEL), badge('pay', r.pay_status, PAY_LABEL))),
