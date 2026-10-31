@@ -65,30 +65,41 @@ const SYSTEM = ctx => `أنت مساعد حجوزات لإدارة مهرجان 
 
 // Google retires models from time to time; pick the newest working "flash" model automatically.
 let liveModel = null;
-export function pickModel(list) {
-  const ver = n => { const m = /^gemini-(\d+(?:\.\d+)?)-flash$/.exec(n); return m ? +m[1] : -1; };
-  const plain = list.filter(n => ver(n) >= 0).sort((a, b) => ver(b) - ver(a));
-  if (plain.length) return plain[0];
-  const flash = list.filter(n => /flash/.test(n) && !/lite|image|tts|live|audio|embedding|thinking|exp/.test(n)).sort().reverse();
-  return flash[0] || list.find(n => /^gemini/.test(n)) || null;
+export function rankModels(list) {
+  const ver = n => { const m = /^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$/.exec(n); return m ? +m[1] - (m[2] ? 0.5 : 0) : -1; };
+  const good = list.filter(n => ver(n) >= 0).sort((a, b) => ver(b) - ver(a));
+  const other = list.filter(n => !good.includes(n) && /flash/.test(n) && !/image|tts|live|audio|embedding|thinking|exp/.test(n)).sort().reverse();
+  return [...good, ...other];
 }
+export function pickModel(list) { return rankModels(list)[0] || list.find(n => /^gemini/.test(n)) || null; }
 const retired = msg => /no longer available|not found|is not supported|deprecated|update your code|does not exist|unknown model/i.test(msg || '');
+const busy = (e) => e.status === 503 || e.status === 429 || /high demand|overloaded|unavailable|try again later|quota/i.test(e.message || '');
 async function callGemini(history, ctx) {
   const cfg = settings();
   let model = liveModel || (cfg.gemini_model && cfg.gemini_model !== 'auto' ? cfg.gemini_model : null);
-  if (!model) { model = pickModel(await listModels(cfg.gemini_key)); liveModel = model; }
-  try { return await askModel(model, history, ctx, cfg.gemini_key); }
-  catch (e) {
-    if (!retired(e.message) && e.status !== 404) throw e;
-    const next = pickModel((await listModels(cfg.gemini_key)).filter(n => n !== model));
-    if (!next) throw e;
+  let list = null;
+  const models = async () => (list ||= await listModels(cfg.gemini_key));
+  if (!model) { model = pickModel(await models()); liveModel = model; }
+  const tried = new Set();
+  const ask = m => { tried.add(m); return askModel(m, history, ctx, cfg.gemini_key); };
+  let err;
+  try { return await ask(model); } catch (e) { err = e; }
+  if (retired(err.message) || err.status === 404) {
+    const next = pickModel((await models()).filter(n => !tried.has(n)));
+    if (!next) throw err;
     liveModel = next;
     if (can.admin()) {
       const E = S.edition;
       sb.from('editions').update({ settings: { ...(E.settings || {}), gemini_model: next } }).eq('id', E.id).then(({ error }) => { if (!error) E.settings = { ...(E.settings || {}), gemini_model: next }; });
     }
-    return await askModel(next, history, ctx, cfg.gemini_key);
+    try { return await ask(next); } catch (e) { err = e; }
   }
+  if (!busy(err)) throw err;
+  // temporarily overloaded: try the next best models for this request only
+  for (const alt of rankModels(await models()).filter(n => !tried.has(n)).slice(0, 3)) {
+    try { return await ask(alt); } catch (e) { err = e; if (!busy(e) && !retired(e.message) && e.status !== 404) throw e; }
+  }
+  throw new Error('خدمة Google Gemini مزدحمة الآن. انتظر دقيقة ثم أعد المحاولة.');
 }
 async function askModel(model, history, ctx, key) {
   const res = await fetch(ENDPOINT(model, key), {
