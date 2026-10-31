@@ -5,7 +5,8 @@ const KEY = 'bcm.festive';
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const store = { get() { try { return localStorage.getItem(KEY); } catch { return null; } }, set(v) { try { localStorage.setItem(KEY, v); } catch {} } };
 export const festiveOn = () => (store.get() ?? (reduced ? 'off' : 'on')) === 'on';
-const COLORS = ['#d8333a', '#e8b84a', '#3f9a5a', '#fff4d6', '#c2185b', '#4fa3d9'];
+import { theme, themeId, hangSVG, heroSVG, flyerSVG, particleDrawer } from './themes.js';
+const COLORS = new Proxy([], { get: (t, k) => k === 'length' ? theme().party.length : theme().party[k] });
 const NS = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
@@ -33,7 +34,7 @@ export function jingle(pitch = 0) {
 export function burst(x, y, n = 22) {
   if (!festiveOn()) return;
   if (x == null) { x = innerWidth / 2; y = innerHeight / 3; }
-  const glyphs = ['✦', '❄', '★', '●', '✧'];
+  const glyphs = { snow: ['✦', '❄', '★', '●', '✧'], hearts: ['❤', '✦', '♥', '✧'], notes: ['♪', '♫', '✦', '★'], stars: ['✦', '★', '✧', '●'], eid: ['☾', '✦', '★', '✧'], confetti: ['■', '●', '▲', '★'], bubbles: ['●', '○', '✦'], petals: ['❀', '✿', '●', '✦'] }[theme().particles] || ['✦', '★', '●'];
   for (let i = 0; i < n; i++) {
     const p = el('span', 'fx-p', glyphs[i % glyphs.length]);
     p.style.cssText = `left:${x}px;top:${y}px;color:${COLORS[i % COLORS.length]};font-size:${10 + Math.random() * 14}px`;
@@ -56,7 +57,8 @@ function startSnow(density) {
   document.body.prepend(c);
   const ctx = c.getContext('2d');
   let W, H, flakes = [], wind = 0, windT = 0, raf, mx = -1, my = -1;
-  const make = top => ({ x: Math.random() * W, y: top ? -10 : Math.random() * H, r: .8 + Math.random() * 2.6, s: .35 + Math.random() * .9, o: .35 + Math.random() * .55, p: Math.random() * 6.28 });
+  let kk = 0; const draw = particleDrawer(theme().particles), up = theme().particles === 'bubbles';
+  const make = top => ({ x: Math.random() * W, y: top ? (up ? H + 10 : -10) : Math.random() * H, r: .8 + Math.random() * 2.6, s: (.35 + Math.random() * .9) * (up ? -.7 : 1), o: .35 + Math.random() * .55, p: Math.random() * 6.28, k: kk++ });
   const size = () => {
     const dpr = Math.min(2, devicePixelRatio || 1);
     W = innerWidth; H = innerHeight; c.width = W * dpr; c.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -71,9 +73,9 @@ function startSnow(density) {
     for (const f of flakes) {
       f.p += .01; f.y += f.s; f.x += Math.sin(f.p) * .35 + wind * f.r * .4;
       if (mx >= 0) { const dx = f.x - mx, dy = f.y - my, d2 = dx * dx + dy * dy; if (d2 < 3600) { const k = (3600 - d2) / 3600 * 1.6; f.x += dx / 60 * k; f.y += dy / 60 * k; } }
-      if (f.y > H + 6) Object.assign(f, make(true));
+      if (f.y > H + 12 || f.y < -14) Object.assign(f, make(true));
       if (f.x > W + 6) f.x = -6; else if (f.x < -6) f.x = W + 6;
-      ctx.globalAlpha = f.o; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 6.283); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.globalAlpha = f.o; draw(ctx, f);
     }
     raf = requestAnimationFrame(tick);
   };
@@ -96,6 +98,19 @@ export function garland(host, { count } = {}) {
     const seg = W / n; let d = 'M0,4';
     for (let i = 0; i < n; i++) d += ` Q${seg * i + seg / 2},${4 + sag} ${seg * (i + 1)},4`;
     svg.append(sv('path', { d, class: 'fx-wire' }));
+    const kind = theme().garland;
+    if (kind !== 'lights') {
+      for (let i = 0; i < n * (kind === 'bunting' ? 2 : 1); i++) {
+        const per = kind === 'bunting' ? seg / 2 : seg, x = per * i + per / 2, t = (x % seg) / seg, y = 4 + 4 * sag * t * (1 - t) * .5 + 1, col = COLORS[(i + hue) % COLORS.length];
+        const g = sv('g', { class: 'fx-bulb fx-item', transform: `translate(${x},${y})`, style: `--c:${col};--d:${(i % 7) * .37}s`, tabindex: '-1' });
+        if (kind === 'bunting') g.innerHTML = `<path d="M-11 0 H11 L0 20z" fill="${col}" stroke="rgba(0,0,0,.12)"/><path d="M-6 3 H6 L0 13z" fill="#fff" opacity=".18"/>`;
+        else if (kind === 'hearts') g.innerHTML = `<path d="M0 18 C-12 9 -14 3 -14 0 a7 7 0 0 1 14 -3 a7 7 0 0 1 14 3 c0 3 -2 9 -14 18z" class="fx-glass" fill="${col}"/>`;
+        else g.innerHTML = `<g transform="translate(-9 -2) scale(.3)">${hangSVG('lantern', i, 60).replace(/<\/?svg[^>]*>/g, '')}</g><circle cx="0" cy="12" r="6" class="fx-glass" fill="${theme().c.goldHi}" opacity=".35"/>`;
+        g.addEventListener('pointerdown', e => { e.stopPropagation(); g.classList.remove('pop'); void g.getBBox(); g.classList.add('pop'); jingle(i); const r = g.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 2, 8); });
+        svg.append(g);
+      }
+      return;
+    }
     for (let i = 0; i < n; i++) {
       const x = seg * i + seg / 2, y = 4 + sag / 2 + 1, col = COLORS[(i + hue) % 5];
       const g = sv('g', { class: 'fx-bulb', transform: `translate(${x},${y}) rotate(${(i % 2 ? 1 : -1) * 8})`, style: `--c:${col};--d:${(i % 7) * .37}s`, tabindex: '-1' });
@@ -133,7 +148,7 @@ export function baubles(host, items) {
   const all = items.map((it, i) => {
     const b = el('button', 'fx-bauble'); b.type = 'button'; b.setAttribute('aria-label', 'زينة');
     b.style.cssText = `inset-inline-start:${it.x};--len:${it.len}px`;
-    b.innerHTML = `<span class="fx-string"></span>${baubleSVG(i + (it.style || 0), it.size || 46)}`;
+    b.innerHTML = `<span class="fx-string"></span>${theme().hang === 'bauble' ? baubleSVG(i + (it.style || 0), it.size || 46) : hangSVG(theme().hang, i + (it.style || 0), it.size || 46)}`;
     layer.append(b);
     const st = { a: (Math.random() - .5) * .2, v: 0, spin: 0, el: b };
     b.addEventListener('pointerenter', e => { st.v += (e.movementX || (Math.random() - .5) * 6) * .004 + (Math.random() - .5) * .04; });
@@ -160,9 +175,9 @@ export function baubles(host, items) {
 }
 
 // ---------- countdown ----------
-export function countdown(startISO, endISO) {
+export function countdown(startISO, endISO, time = null) {
   const box = el('div', 'fx-count'); box.setAttribute('role', 'timer');
-  const start = new Date(startISO + 'T00:00:00+03:00').getTime();
+  const start = new Date(startISO + 'T' + (/^\d{1,2}:\d{2}$/.test(time || '') ? time.padStart(5, '0') : '00:00') + ':00+03:00').getTime();
   const end = new Date(endISO + 'T23:59:59+03:00').getTime();
   const units = [['d', 'يوم', 86400], ['h', 'ساعة', 3600], ['m', 'دقيقة', 60], ['s', 'ثانية', 1]];
   const cells = {};
@@ -176,14 +191,14 @@ export function countdown(startISO, endISO) {
     if (box.isConnected) seen = true; else if (seen) return clearInterval(iv);
     const now = Date.now();
     if (now < start) {
-      setH('يفتتح المهرجان بعد');
+      setH(theme().countdown);
       let t = Math.floor((start - now) / 1000);
       for (const [k, , s] of units) { const v = Math.floor(t / s); t -= v * s; const txt = String(v).padStart(k === 'd' ? 1 : 2, '0'); if (cells[k].textContent !== txt) { cells[k].textContent = txt; cells[k].classList.remove('tick'); void cells[k].offsetWidth; cells[k].classList.add('tick'); } }
       grid.hidden = false;
     } else if (now <= end) {
-      const day = Math.floor((now - start) / 86400000) + 1, all = Math.round((end - start) / 86400000);
-      setH(`🎄 المهرجان قائم الآن — اليوم ${day} من ${all}`); grid.hidden = true;
-    } else { setH('شكراً لكم — نلقاكم في الموسم القادم ✨'); grid.hidden = true; }
+      const day = Math.floor((now - start) / 86400000) + 1, all = Math.round((end - start) / 86400000), T = theme();
+      setH(all <= 1 ? `${T.icon} ${T.noun} اليوم — أهلاً بكم` : `${T.icon} ${T.noun} قائم الآن — اليوم ${day} من ${all}`); grid.hidden = true;
+    } else { setH('شكراً لكم — نلقاكم في المناسبة القادمة ✨'); grid.hidden = true; }
   };
   upd(); const iv = setInterval(upd, 1000);
   box._stop = () => clearInterval(iv);
@@ -192,7 +207,13 @@ export function countdown(startISO, endISO) {
 
 // ---------- interactive tree ----------
 export function tree(size = 120) {
-  const b = el('button', 'fx-tree'); b.type = 'button'; b.setAttribute('aria-label', 'شجرة الميلاد — اضغط لإضاءتها');
+  const b = el('button', 'fx-tree fx-hero-' + theme().hero); b.type = 'button'; b.setAttribute('aria-label', themeId() === 'christmas' ? 'شجرة الميلاد — اضغط لإضاءتها' : 'زينة — اضغط عليها');
+  if (theme().hero !== 'tree') {
+    b.innerHTML = `<svg viewBox="0 0 120 170" width="${size}" height="${size * 1.42}" aria-hidden="true">${heroSVG(theme().hero)}</svg>`;
+    let mode = 0;
+    b.addEventListener('click', e => { mode = (mode + 1) % 3; b.dataset.mode = mode; jingle(mode * 2); burst(e.clientX, e.clientY - 40, 18); });
+    return b;
+  }
   const lights = [[44, 52], [70, 60], [56, 80], [36, 92], [82, 96], [60, 112], [30, 124], [92, 128], [48, 136], [74, 140]];
   b.innerHTML = `<svg viewBox="0 0 120 170" width="${size}" height="${size * 1.42}" aria-hidden="true">
 <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f9a5a"/><stop offset="1" stop-color="#16452a"/></linearGradient></defs>
@@ -293,9 +314,64 @@ export function jingleBells() {
   } catch {}
 }
 
+// ---------- original short tunes for the other themes ----------
+const NOTE = n => { const m = /^([A-G])(#|b)?(\d)$/.exec(n); const i = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (m[3] - 4) * 12; return 440 * Math.pow(2, i / 12); };
+const TUNES = {
+  pop: { beat: .22, inst: 'pluck', drums: 'pop', notes: 'E5 1,G5 1,A5 1,G5 1,E5 1,D5 1,C5 1,D5 1,E5 1,E5 1,G5 1,E5 1,D5 1,C5 1,D5 2,C5 1,D5 1,E5 1,G5 1,A5 2,G5 2,E5 1,D5 1,C5 4' },
+  maqam: { beat: .3, inst: 'oud', drums: 'darbuka', notes: 'D4 1,Eb4 1,F#4 1,G4 2,A4 1,Bb4 1,A4 2,G4 1,F#4 1,G4 2,F#4 1,Eb4 1,D4 3,A4 1,Bb4 1,C5 1,Bb4 1,A4 2,G4 1,F#4 1,Eb4 1,D4 4' },
+  love: { beat: .3, inst: 'harp', notes: 'A4 1,C#5 1,E5 1,A5 2,G#5 1,E5 1,F#5 3,D5 1,F#5 1,A5 1,B5 2,A5 1,F#5 1,E5 3,C#5 1,E5 1,A5 1,G#5 1,F#5 1,E5 1,A4 4' },
+  eid: { beat: .24, inst: 'bell', drums: 'darbuka', notes: 'G4 1,G4 1,A4 1,Bb4 1,A4 1,G4 1,F#4 1,G4 2,D5 1,C5 1,Bb4 1,A4 1,G4 2,Bb4 1,C5 1,D5 2,Eb5 1,D5 1,C5 1,Bb4 1,A4 1,G4 4' },
+  fanfare: { beat: .26, inst: 'brass', drums: 'march', notes: 'G4 1,C5 1,E5 1,G5 2,E5 1,G5 1,C6 3,A5 1,G5 1,F5 1,E5 1,D5 1,C5 1,D5 2,E5 1,F5 1,G5 2,C6 4' },
+  happy: { beat: .2, inst: 'bell', drums: 'pop', notes: 'C5 1,E5 1,G5 1,E5 1,F5 1,A5 1,G5 2,E5 1,G5 1,C6 1,B5 1,A5 1,G5 2,F5 1,E5 1,D5 1,E5 1,C5 4' },
+};
+function intro(name) {
+  if (!soundOn()) return 600;
+  if (name === 'stadium') { stadium(true); return 1600; }
+  SFX.magic(); return 700;
+}
+function stadium(short) {
+  const a = ac(); if (!a) return;
+  // referee whistle trill, crowd roar and air-horn blasts
+  for (let i = 0; i < 3; i++) tone(2900, i * .16, .12, { vol: .05, f2: 3100 });
+  noiseSweep(.2, short ? 1.4 : 3.2, 300, 1100, .12, .4);
+  for (let i = 0; i < 3; i++) { tone(233, .5 + i * .45, .32, { type: 'sawtooth', vol: .05, filter: 1400 }); tone(294, .5 + i * .45, .32, { type: 'sawtooth', vol: .04, filter: 1400 }); }
+}
+export function playTune(name) {
+  stopMusic(); if (!soundOn()) return;
+  if (name === 'jingle') return jingleBells();
+  const a = ac(); if (!a) return;
+  const master = a.createGain(); master.connect(a.destination); routeTo = master;
+  const stopper = () => { const n = a.currentTime; master.gain.setValueAtTime(master.gain.value, n); master.gain.linearRampToValueAtTime(0, n + .2); };
+  if (name === 'stadium') {
+    stadium(false); routeTo = null;
+    const t0 = a.currentTime; [0, .3, .6, .75, .9, 1.4, 1.7, 2.0, 2.15, 2.3].forEach(d => noiseSweep(d + .2, .07, 1800, 1200, .09, 2));
+    const end = setTimeout(() => { music = null; }, 3600); music = { stop() { clearTimeout(end); stopper(); } }; void t0; return;
+  }
+  const T = TUNES[name] || TUNES.happy, seq = T.notes.split(',').map(x => { const [n, d] = x.split(' '); return [NOTE(n), +d]; });
+  let at = .05; const timers = [];
+  for (const [f, d] of seq) {
+    const dur = d * T.beat;
+    if (T.inst === 'bell') bellTone(f, at, .06, Math.max(.4, dur * 1.6));
+    else if (T.inst === 'pluck') { tone(f, at, Math.max(.25, dur * 1.2), { type: 'triangle', vol: .08 }); tone(f * 2, at, .15, { vol: .02 }); }
+    else if (T.inst === 'oud') { tone(f, at, Math.max(.35, dur * 1.3), { type: 'sawtooth', vol: .05, filter: 1800 }); tone(f * 1.003, at, .3, { type: 'triangle', vol: .04 }); }
+    else if (T.inst === 'harp') { tone(f, at, Math.max(.6, dur * 2), { vol: .07 }); tone(f * 2, at, .4, { vol: .02 }); }
+    else if (T.inst === 'brass') tone(f, at, Math.max(.2, dur * .95), { type: 'sawtooth', vol: .05, attack: .03, filter: 2200 });
+    at += dur;
+  }
+  if (T.drums) for (let b = 0, t = .05; t < at; b++, t += T.beat * 2) {
+    if (T.drums === 'darbuka') { if (b % 4 === 0) tone(110, t, .18, { vol: .14, f2: 70 }); else noiseSweep(t, .06, 3200, 2200, .06, 3); }
+    else if (T.drums === 'march') { if (b % 2 === 0) tone(90, t, .16, { vol: .12, f2: 60 }); else noiseSweep(t, .08, 2400, 1600, .05, 1.5); }
+    else { if (b % 2 === 0) tone(80, t, .14, { vol: .13, f2: 50 }); else noiseSweep(t, .07, 2600, 1800, .05, 1.2); }
+  }
+  routeTo = null;
+  const end = setTimeout(() => { music = null; }, at * 1000 + 600);
+  music = { stop() { clearTimeout(end); stopper(); } };
+}
+
 export function sleigh({ first = 2500, every = [24000, 50000], when = () => true } = {}) {
-  const s = el('button', 'fx-sleigh'); s.type = 'button'; s.setAttribute('aria-label', 'زلاجة بابا نويل — اضغط عليها');
-  s.innerHTML = `<span class="sl-in">${SLEIGH_SVG}</span>`;
+  const xmas = theme().flyer === 'sleigh';
+  const s = el('button', 'fx-sleigh fx-fly-' + theme().flyer); s.type = 'button'; s.setAttribute('aria-label', xmas ? 'زلاجة بابا نويل — اضغط عليها' : 'اضغط عليّ');
+  s.innerHTML = `<span class="sl-in">${xmas ? SLEIGH_SVG : flyerSVG(theme().flyer)}</span>`;
   document.body.append(s);
   let tmo, anim = null, trail = null, busy = false;
   const schedule = () => { clearTimeout(tmo); tmo = setTimeout(fly, every[0] + Math.random() * (every[1] - every[0])); };
@@ -326,14 +402,14 @@ export function sleigh({ first = 2500, every = [24000, 50000], when = () => true
   s.addEventListener('click', e => {
     if (music) { stopMusic(); return; }
     if (busy) return; busy = true;
-    const t = el('span', 'fx-ho', 'هو هو هو! 🎅'); t.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`; document.body.append(t); setTimeout(() => t.remove(), 2200);
+    const t = el('span', 'fx-ho', theme().say); t.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`; document.body.append(t); setTimeout(() => t.remove(), 2200);
     burst(e.clientX, e.clientY, 26);
     anim?.pause(); s.classList.add('hohoho');
-    const wait = hoHoHo();
+    const wait = xmas ? hoHoHo() : intro(theme().music);
     setTimeout(() => {
       s.classList.remove('hohoho'); anim?.play(); busy = false;
-      jingleBells();
-      const n = el('span', 'fx-ho fx-music', '🎶 Jingle Bells — اضغط على الزلاجة لإيقافها'); n.style.cssText = `left:${innerWidth / 2}px;top:${innerHeight - 40}px`; document.body.append(n); setTimeout(() => n.remove(), 3500);
+      playTune(theme().music);
+      const n = el('span', 'fx-ho fx-music', xmas ? '🎶 Jingle Bells — اضغط على الزلاجة لإيقافها' : '🎶 اضغط مرة أخرى لإيقاف النغمة'); n.style.cssText = `left:${innerWidth / 2}px;top:${innerHeight - 40}px`; document.body.append(n); setTimeout(() => n.remove(), 3500);
     }, wait);
   });
   tmo = setTimeout(fly, first);
@@ -344,6 +420,7 @@ export function sleigh({ first = 2500, every = [24000, 50000], when = () => true
 const SKEY = 'bcm.sound';
 const sstore = { get() { try { return localStorage.getItem(SKEY); } catch { return null; } }, set(v) { try { localStorage.setItem(SKEY, v); } catch {} } };
 export const soundOn = () => (sstore.get() ?? 'on') === 'on';
+let routeTo = null;
 const ac = () => { try { actx ||= new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); return actx; } catch { return null; } };
 function tone(f, at, dur, { type = 'sine', vol = .08, attack = .006, f2 = null, filter = null } = {}) {
   const a = ac(); if (!a) return;
@@ -352,7 +429,7 @@ function tone(f, at, dur, { type = 'sine', vol = .08, attack = .006, f2 = null, 
   g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
   let node = o.connect(g);
   if (filter) { const fl = a.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = filter; node = node.connect(fl); }
-  node.connect(a.destination); o.start(t); o.stop(t + dur + .05);
+  node.connect(routeTo || a.destination); o.start(t); o.stop(t + dur + .05);
 }
 function bellTone(f, at, vol = .07, dur = .9) { for (const [m, v, d] of [[1, 1, 1], [2.76, .4, .55], [5.4, .18, .3]]) tone(f * m, at, dur * d, { vol: vol * v }); }
 function noiseSweep(at, dur, from, to, vol = .05, q = 1.2) {
@@ -361,7 +438,7 @@ function noiseSweep(at, dur, from, to, vol = .05, q = 1.2) {
   for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * i / len);
   const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
   src.buffer = buf; bp.type = 'bandpass'; bp.Q.value = q; bp.frequency.setValueAtTime(from, t); bp.frequency.exponentialRampToValueAtTime(to, t + dur);
-  g.gain.value = vol; src.connect(bp).connect(g).connect(a.destination); src.start(t);
+  g.gain.value = vol; src.connect(bp).connect(g).connect(routeTo || a.destination); src.start(t);
 }
 // a small palette of interface sounds; each window type gets its own
 export const SFX = {

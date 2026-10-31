@@ -8,6 +8,7 @@ export function setLang(l) { try { localStorage.setItem('bcm.lang', l); } catch 
 export const isEn = () => LANG === 'en';
 
 const D = {
+  "مهرجان عيد الميلاد": "Christmas festival", "حفلة غنائية": "Concert", "أمسية غنائية": "Music evening", "حفل عيد الحب": "Valentine's party", "حفل عيد الأضحى": "Eid al-Adha party", "حفل عيد الفطر": "Eid al-Fitr party", "اليوم الوطني": "National Day", "مباراة الكلاسيكو": "El Clásico match", "مباريات كأس العالم": "World Cup matches", "مباريات خليجي": "Gulf Cup matches", "مباريات منتخب العراق": "Iraq national team matches", "مهرجان الصيف": "Summer festival", "مهرجان الربيع": "Spring festival", "فعالية أخرى": "Other event", "يفتتح المهرجان بعد": "The festival opens in", "يبدأ الحفل بعد": "The party starts in", "تبدأ الأمسية بعد": "The evening starts in", "يبدأ الاحتفال بعد": "The celebration starts in", "تنطلق المباراة بعد": "Kick-off in", "تبدأ الفعالية بعد": "The event starts in", "سهرة ممتعة": "Enjoy the night", "أمسية طربية سعيدة": "Have a lovely evening", "عيد حب سعيد": "Happy Valentine's", "عيد أضحى مبارك وكل عام وأنتم بخير": "Eid al-Adha Mubarak", "عيد فطر سعيد وكل عام وأنتم بخير": "Happy Eid al-Fitr", "كل عام والعراق بخير": "Happy National Day, Iraq", "مباراة ممتعة": "Enjoy the match", "بالتوفيق لمنتخبنا": "Good luck to our team", "صيف سعيد": "Happy summer", "ربيع سعيد": "Happy spring", "نتمنى لكم وقتاً ممتعاً": "Have a great time", "إدارة الحجوزات": "Booking management", "المشاريع": "Projects", "مشروع جديد": "New project", "＋ مشروع جديد": "＋ New project", "✨ مشروع جديد": "✨ New project", "✨ إنشاء المشروع": "✨ Create project", "جارٍ الإنشاء…": "Creating…", "اسم المشروع": "Project name", "المكان": "Venue", "الوقت (اختياري)": "Time (optional)", "التاريخ": "Date", "إلى تاريخ": "To date", "المناسبة في يوم واحد": "One-day event", "ما الذي يُحجز؟": "What is booked?", "شعار المشروع (اختياري)": "Project logo (optional)", "شعار المشروع": "Project logo", "خريطة المكان (اختياري — يمكن رفعها لاحقاً)": "Venue map (optional — you can upload it later)", "صورة مخطط القاعة أو الملعب أو الساحة. بدونها تظهر أرضية بشبكة تضع عليها الطاولات والأكشاك بنفسك.": "A plan of the hall, stadium or square. Without it a grid floor is shown and you place tables and kiosks yourself.", "استخدم نفس أرقام الاستفسار": "Use the same inquiry numbers", "اختر نوع المناسبة: يتغير التصميم والزينة والأصوات والكلمات (أكشاك، طاولات…) تلقائياً، ويمكنك تعديل كل شيء لاحقاً من الإعدادات.": "Pick the occasion: design, decorations, sounds and wording (kiosks, tables…) change automatically, and you can edit everything later in Settings.", "بيانات المشروع": "Project details", "تاريخ البداية": "Start date", "تاريخ النهاية (نفس اليوم إن كانت ليوم واحد)": "End date (same day for a one-day event)", "نوع المناسبة والتصميم": "Occasion and design", "عبارة للزبائن": "Tagline for customers", "عبارة قصيرة تظهر للزبائن (اختياري)": "A short line shown to customers (optional)", "مكان المناسبة": "Event venue", "استبدال خريطة المكان": "Replace venue map", "تبقى أماكن الأكشاك والطاولات بنفس نسبتها على الصورة الجديدة.": "Kiosks and tables keep their relative places on the new image.", "إزالة الشعار": "Remove logo", "كل مشروع له خريطته وأكشاكه أو طاولاته وحجوزاته وتقاريره وتصميمه الخاص.": "Each project has its own map, kiosks or tables, bookings, reports and design.", "رابط الخريطة العامة للزبائن": "Public customer map link", "مشروع مؤرشف (منتهٍ)": "Archived project (finished)", "مفتوح الآن": "Open now", "فتح": "Open", "🔗 رابط المنظمين": "🔗 Organizers link", "🔗 رابط الزبائن": "🔗 Customers link", "واتساب": "WhatsApp", "نسخ": "Copy", "مشاريع منتهية": "Finished projects", "الرابط العام (يفتح أقرب مشروع فعّال تلقائياً، ويمكن للزبون التبديل بين المشاريع):": "General link (opens the nearest active project automatically; customers can switch projects):", "نسخة جديدة من نفس المشروع (للسنة القادمة)": "New copy of this project (for next year)", "تم حفظ بيانات المشروع": "Project details saved", "نص عقد الحجز": "Booking contract text", "عدد الأشخاص": "Guests", "عدد الأشخاص (السعة)": "Guests (capacity)", "الشكل": "Shape", "▭ مستطيل / مربع": "▭ Rectangle / square", "◯ دائري": "◯ Round", "الفئة": "Category", "عدد الأشخاص لكل واحد": "Guests each", "كم كشكاً تريد إضافته؟": "How many to add?", "لإضافة صف أو مجموعة كاملة دفعة واحدة بأرقام متتالية تبدأ من الرقم الأول.": "Add a whole row or group at once with consecutive numbers from the first one.", "عدد في الصف": "Per row", "المسافة بينها (بكسل)": "Spacing (px)", "رقم الكشك (الأول)": "Kiosk number (first)", "الحجم الافتراضي": "Default size", "✎ تعديل الكشك (الرقم، السعة، السعر)": "✎ Edit kiosk (number, capacity, price)", "الرقم": "Number", "حفظ": "Save", "لا يوجد مشروع بعد": "No project yet", "أنشئ أول مشروع (حفل، مباراة، مهرجان…) وارفع خريطته.": "Create your first project (party, match, festival…) and upload its map.", "افتح الخريطة": "Open the map", "المشروع": "Project", "الحقول التي تُملأ تلقائياً: {festival} {festival_start} {festival_end} {customer} {company_line} {contact} {phone} {email} {kiosks} {start} {end} {days} {daily} {guests} {unit} {total} {paid} {remaining} {deadline} {today} {notes}": "Auto-filled fields: {festival} {festival_start} {festival_end} {customer} {company_line} {contact} {phone} {email} {kiosks} {start} {end} {days} {daily} {guests} {unit} {total} {paid} {remaining} {deadline} {today} {notes}",
   '🔔 الأصوات: تعمل': '🔔 Sounds: on', '🔕 الأصوات: متوقفة': '🔕 Sounds: off', 'الأصوات': 'Sounds', 'الزينة': 'Decorations',
   '＋ عدد الزوار': '＋ Visitors', 'عدد الزوار': 'visitors', 'متابعة': 'Continue', 'التاريخ مضبوط على اليوم، ويمكنك تغييره قبل المتابعة.': 'The date is set to today; you can change it before continuing.', 'أمس': 'Yesterday', 'يوم الافتتاح': 'Opening day', 'آخر يوم': 'Last day', ' · قبل الافتتاح': ' · before opening', ' · بعد انتهاء المهرجان': ' · after the festival',
   '✎ تغيير رقم الكشك': '✎ Change kiosk number', 'الرقم الجديد': 'New number', 'حفظ الرقم الجديد': 'Save new number', 'يتغير الرقم على الخريطة وفي الحجوزات والتقارير وصفحة الزوار فوراً.': 'The number changes on the map, bookings, reports and the public page right away.',
@@ -355,17 +356,60 @@ export function tr(text) {
   return out;
 }
 
+// ---------- project wording: kiosk → table / seat / booth, festival → concert / match … ----------
+let TERMS = null;
+const AR_UNITS = {
+  table: [['الكشكين', 'الطاولتين'], ['كشكين', 'طاولتين'], ['أكشاك', 'طاولات'], ['كشكاً', 'طاولةً'], ['كشك', 'طاولة']],
+  seat: [['الكشكين', 'المقعدين'], ['كشكين', 'مقعدين'], ['أكشاك', 'مقاعد'], ['كشكاً', 'مقعداً'], ['كشك', 'مقعد']],
+  booth: [['الكشكين', 'الجناحين'], ['كشكين', 'جناحين'], ['أكشاك', 'أجنحة'], ['كشكاً', 'جناحاً'], ['كشك', 'جناح']],
+};
+// feminine agreement fixes for «طاولة»
+const FEM = [[/هذا الطاولة/g, 'هذه الطاولة'], [/(طاولة|الطاولة) متوفر(?!ة)/g, '$1 متوفرة'], [/(طاولة|الطاولة) محجوز(?!ة)/g, '$1 محجوزة'], [/(طاولة|الطاولة) جديد(?!ة)/g, '$1 جديدة'],
+  [/الطاولة غير متاح(?!ة)/g, 'الطاولة غير متاحة'], [/الطاولة الأول(?!ى)/g, 'الطاولة الأولى'], [/(طاولة|الطاولة) واحد(?!ة)/g, '$1 واحدة'], [/عدة طاولة/g, 'عدة طاولات'], [/(\d+) طاولة/g, '$1 طاولة']];
+const EN_UNITS = { table: ['table', 'tables'], seat: ['seat', 'seats'], booth: ['booth', 'booths'] };
+export function setTerms({ unit = 'kiosk', noun = null } = {}) {
+  TERMS = (unit && unit !== 'kiosk') || (noun && noun !== 'المهرجان') ? { unit, noun } : null;
+  if (TERMS) ensureObserver();
+}
+function term(text) {
+  if (!TERMS || !text) return text;
+  let out = text;
+  if (TERMS.unit !== 'kiosk' && AR_UNITS[TERMS.unit] && out.includes('كشك') || /أكشاك/.test(out)) {
+    for (const [a, b] of AR_UNITS[TERMS.unit] || []) out = out.split(a).join(b);
+    if (TERMS.unit === 'table') for (const [re, r] of FEM) out = out.replace(re, r);
+  }
+  if (TERMS.noun && TERMS.noun !== 'المهرجان' && out.includes('مهرجان')) out = out.split('المهرجان').join(TERMS.noun).split('مهرجان').join(TERMS.noun.replace(/^ال/, ''));
+  if (EN_UNITS[TERMS.unit] && /kiosk/i.test(out)) out = out.replace(/\b(K|k)iosks\b/g, (m, k) => (k === 'K' ? EN_UNITS[TERMS.unit][1][0].toUpperCase() + EN_UNITS[TERMS.unit][1].slice(1) : EN_UNITS[TERMS.unit][1])).replace(/\b(K|k)iosk\b/g, (m, k) => (k === 'K' ? EN_UNITS[TERMS.unit][0][0].toUpperCase() + EN_UNITS[TERMS.unit][0].slice(1) : EN_UNITS[TERMS.unit][0]));
+  return out;
+}
+const conv = v => term(isEn() ? tr(v) : v);
+let observing = false;
+function ensureObserver() {
+  if (observing) { translateNode(document.body); return; }
+  observing = true;
+  translateNode(document.body);
+  document.title = conv(document.title);
+  new MutationObserver(muts => {
+    for (const m of muts) {
+      if (m.type === 'characterData') translateNode(m.target);
+      else if (m.type === 'attributes') translateNode(m.target);
+      else m.addedNodes.forEach(translateNode);
+    }
+    const t = conv(document.title); if (t !== document.title) document.title = t;
+  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+}
+
 const ATTRS = ['placeholder', 'aria-label', 'title'];
 const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'CODE']);
 function translateNode(root) {
-  if (root.nodeType === 3) { const p = root.parentNode; if (p && !SKIP.has(p.nodeName) && !p.closest?.('[data-raw]')) { const t = tr(root.nodeValue); if (t !== root.nodeValue) root.nodeValue = t; } return; }
+  if (root.nodeType === 3) { const p = root.parentNode; if (p && !SKIP.has(p.nodeName) && !p.closest?.('[data-raw]')) { const t = conv(root.nodeValue); if (t !== root.nodeValue) root.nodeValue = t; } return; }
   if (root.nodeType !== 1 || SKIP.has(root.nodeName) || root.closest?.('[data-raw]')) return;
-  for (const a of ATTRS) { const v = root.getAttribute?.(a); if (v && AR.test(v)) { const t = tr(v); if (t !== v) root.setAttribute(a, t); } }
-  if (root.nodeName === 'OPTION' && AR.test(root.textContent)) { const t = tr(root.textContent); if (t !== root.textContent) root.textContent = t; }
+  for (const a of ATTRS) { const v = root.getAttribute?.(a); if (v) { const t = conv(v); if (t !== v) root.setAttribute(a, t); } }
+  if (root.nodeName === 'OPTION') { const t = conv(root.textContent); if (t !== root.textContent) root.textContent = t; }
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
   let n; while ((n = w.nextNode())) {
-    if (n.nodeType === 1) { if (SKIP.has(n.nodeName) || n.hasAttribute('data-raw')) continue; for (const a of ATTRS) { const v = n.getAttribute(a); if (v && AR.test(v)) { const t = tr(v); if (t !== v) n.setAttribute(a, t); } } }
-    else if (AR.test(n.nodeValue) && !SKIP.has(n.parentNode.nodeName) && !n.parentNode.closest('[data-raw]')) { const t = tr(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t; }
+    if (n.nodeType === 1) { if (SKIP.has(n.nodeName) || n.hasAttribute('data-raw')) continue; for (const a of ATTRS) { const v = n.getAttribute(a); if (v) { const t = conv(v); if (t !== v) n.setAttribute(a, t); } } }
+    else if (!SKIP.has(n.parentNode.nodeName) && !n.parentNode.closest('[data-raw]')) { const t = conv(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t; }
   }
 }
 
@@ -377,16 +421,7 @@ export function startI18n() {
   if (!isEn()) return;
   document.documentElement.lang = 'en';
   document.documentElement.dir = 'ltr';
-  translateNode(document.body);
-  document.title = tr(document.title);
-  new MutationObserver(muts => {
-    for (const m of muts) {
-      if (m.type === 'characterData') translateNode(m.target);
-      else if (m.type === 'attributes') translateNode(m.target);
-      else m.addedNodes.forEach(translateNode);
-    }
-    if (AR.test(document.title)) { const t = tr(document.title); if (t !== document.title) document.title = t; }
-  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+  ensureObserver();
   const origPrompt = window.prompt.bind(window);
-  window.prompt = (msg, def) => origPrompt(tr(msg), def);
+  window.prompt = (msg, def) => origPrompt(conv(msg), def);
 }

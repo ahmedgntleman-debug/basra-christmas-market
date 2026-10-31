@@ -79,6 +79,16 @@ create table if not exists public.editions (
 );
 
 alter table public.editions add column if not exists contacts jsonb not null default '[]';
+-- projects: any kind of event (theme), where it is, what is booked (kiosks, tables, seats, booths) and its logo
+alter table public.editions add column if not exists event_type text not null default 'christmas';
+alter table public.editions add column if not exists venue text;
+alter table public.editions add column if not exists unit_kind text not null default 'kiosk';
+alter table public.editions add column if not exists logo_url text;
+alter table public.editions add column if not exists event_time text;
+alter table public.editions add column if not exists tagline text;
+do $$ begin
+  alter table public.editions add constraint editions_unit_kind_chk check (unit_kind in ('kiosk','table','seat','booth'));
+exception when duplicate_object then null; end $$;
 
 -- ---------------------------------------------------------------------
 -- Kiosks (geometry is relative to the map image: cx,cy,w,h in 0..1, rot in degrees)
@@ -100,6 +110,7 @@ create table if not exists public.kiosks (
   created_at   timestamptz not null default now(),
   unique (edition_id, code)
 );
+alter table public.kiosks add column if not exists capacity int check (capacity is null or capacity > 0);
 
 -- ---------------------------------------------------------------------
 -- Customers / agencies (shared across all editions)
@@ -147,6 +158,7 @@ create table if not exists public.reservations (
   check (status <> 'confirmed' or customer_id is not null)
 );
 alter table public.reservations add column if not exists deal_type text not null default 'rental' check (deal_type in ('rental','sponsorship'));
+alter table public.reservations add column if not exists guests int check (guests is null or guests >= 0);
 create index if not exists reservations_edition_idx on public.reservations(edition_id);
 create index if not exists reservations_customer_idx on public.reservations(customer_id);
 
@@ -412,12 +424,12 @@ begin
   end if;
 
   insert into reservations(edition_id, customer_id, status, start_date, end_date, hold_until,
-                           agreed_amount, discount, extra_charges, payment_deadline, notes, deal_type)
+                           agreed_amount, discount, extra_charges, payment_deadline, notes, deal_type, guests)
   values ((p->>'edition_id')::uuid, v_cust, coalesce(nullif(p->>'status',''),'confirmed'),
           (p->>'start_date')::date, (p->>'end_date')::date, nullif(p->>'hold_until','')::timestamptz,
           nullif(p->>'agreed_amount','')::bigint, coalesce(nullif(p->>'discount','')::bigint,0),
           coalesce(nullif(p->>'extra_charges','')::bigint,0), nullif(p->>'payment_deadline','')::date,
-          nullif(p->>'notes',''), coalesce(nullif(p->>'deal_type',''),'rental'))
+          nullif(p->>'notes',''), coalesce(nullif(p->>'deal_type',''),'rental'), nullif(p->>'guests','')::int)
   returning id into v_res;
 
   if jsonb_array_length(coalesce(p->'kiosk_ids','[]')) = 0 then
@@ -518,8 +530,18 @@ returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare e editions; v_from date; v_to date; res jsonb;
 begin
-  select * into e from editions where slug = p_slug and public_enabled;
-  if not found then return null; end if;
+  -- no link (or an old one): open the nearest running / upcoming project
+  if coalesce(p_slug, '') <> '' then
+    select * into e from editions where slug = p_slug and public_enabled;
+  end if;
+  if e.id is null then
+    select * into e from editions where public_enabled and not archived and end_date >= public.baghdad_today()
+      order by greatest(start_date, public.baghdad_today()), start_date desc limit 1;
+  end if;
+  if e.id is null then
+    select * into e from editions where public_enabled order by archived, end_date desc limit 1;
+  end if;
+  if e.id is null then return null; end if;
   perform public.release_expired_holds();
   v_from := greatest(coalesce(p_from, e.start_date), e.start_date - 60);
   v_to   := least(coalesce(p_to, e.end_date), v_from + 120);
@@ -528,10 +550,16 @@ begin
   select jsonb_build_object(
     'edition', jsonb_build_object('name', e.name, 'slug', e.slug, 'start_date', e.start_date,
                'end_date', e.end_date, 'map_url', e.map_url, 'map_w', e.map_w, 'map_h', e.map_h,
-               'contact_phone', e.contact_phone, 'contact_whatsapp', e.contact_whatsapp, 'contacts', e.contacts, 'colors', e.colors),
+               'contact_phone', e.contact_phone, 'contact_whatsapp', e.contact_whatsapp, 'contacts', e.contacts, 'colors', e.colors,
+               'event_type', e.event_type, 'venue', e.venue, 'unit_kind', e.unit_kind, 'logo_url', e.logo_url,
+               'event_time', e.event_time, 'tagline', e.tagline),
     'from', v_from, 'to', v_to,
+    'projects', (select coalesce(jsonb_agg(jsonb_build_object('slug', x.slug, 'name', x.name, 'event_type', x.event_type,
+        'start_date', x.start_date, 'end_date', x.end_date, 'venue', x.venue, 'unit_kind', x.unit_kind, 'logo_url', x.logo_url)
+        order by x.start_date), '[]') from editions x
+        where x.public_enabled and not x.archived and (x.end_date >= public.baghdad_today() or x.id = e.id)),
     'kiosks', coalesce(jsonb_agg(jsonb_build_object(
-        'code', k.code, 'grp', k.grp, 'geom', k.geom, 'shape', k.shape,
+        'code', k.code, 'grp', k.grp, 'geom', k.geom, 'shape', k.shape, 'capacity', k.capacity,
         -- held kiosks show as reserved to the public
         'status', case s.status when 'held' then 'reserved' else s.status end)
         order by k.code), '[]'))
@@ -561,21 +589,24 @@ begin
   end if;
   select * into s from editions where id = p_source;
   insert into editions(slug, name, start_date, end_date, map_url, map_w, map_h,
-                       contact_phone, contact_whatsapp, contacts, colors)
+                       contact_phone, contact_whatsapp, contacts, colors, event_type, venue, unit_kind, logo_url, event_time, tagline)
   values (p->>'slug', p->>'name', (p->>'start_date')::date, (p->>'end_date')::date,
           case when coalesce((p->>'copy_map')::boolean, true) then s.map_url else 'map.jpg' end,
           s.map_w, s.map_h,
           s.contact_phone, s.contact_whatsapp, s.contacts,
           case when coalesce((p->>'copy_branding')::boolean, true) then s.colors
-               else '{"available":"#2e8b57","reserved":"#c0392b","held":"#e67e22","partial":"#f1c40f","disabled":"#9e9e9e"}'::jsonb end)
+               else '{"available":"#2e8b57","reserved":"#c0392b","held":"#e67e22","partial":"#f1c40f","disabled":"#9e9e9e"}'::jsonb end,
+          coalesce(nullif(p->>'event_type',''), s.event_type), coalesce(nullif(p->>'venue',''), s.venue),
+          coalesce(nullif(p->>'unit_kind',''), s.unit_kind),
+          case when coalesce((p->>'copy_branding')::boolean, true) then s.logo_url end, s.event_time, s.tagline)
   returning id into v_new;
 
   if coalesce((p->>'copy_kiosks')::boolean, true) then
-    insert into kiosks(edition_id, code, grp, category, zone, geom, shape, rentable, active, needs_verify, note, list_price)
+    insert into kiosks(edition_id, code, grp, category, zone, geom, shape, rentable, active, needs_verify, note, list_price, capacity)
     select v_new, code, grp,
            case when coalesce((p->>'copy_categories')::boolean, true) then category end,
            zone, geom, shape, rentable, active, false, note,
-           case when coalesce((p->>'copy_prices')::boolean, false) then list_price end
+           case when coalesce((p->>'copy_prices')::boolean, false) then list_price end, capacity
     from kiosks where edition_id = p_source;
   end if;
   return v_new;

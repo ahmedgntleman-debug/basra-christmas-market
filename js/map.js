@@ -55,6 +55,8 @@ export class MapView {
   // ---------- data ----------
   setMap(url, w, h) {
     this.W = w || 1109; this.H = h || 1600;
+    // projects without an uploaded plan get a clean grid floor
+    if (!url || url === 'grid') url = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${this.W}" height="${this.H}"><defs><pattern id="g" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#e3ded4" stroke-width="1"/></pattern><pattern id="G" width="250" height="250" patternUnits="userSpaceOnUse"><rect width="250" height="250" fill="url(#g)"/><path d="M250 0H0V250" fill="none" stroke="#d2cabb" stroke-width="2"/></pattern></defs><rect width="100%" height="100%" fill="#fbfaf6"/><rect width="100%" height="100%" fill="url(#G)"/></svg>`);
     this.img.setAttribute('href', url);
     this.img.setAttribute('width', this.W);
     this.img.setAttribute('height', this.H);
@@ -100,8 +102,13 @@ export class MapView {
     if (p.h > p.w * 1.3) t.setAttribute('transform', 'rotate(90)');
     if (k.shape === 'triangle') t.setAttribute('y', p.h * 0.12);
     t.textContent = k.code;
-    const title = s('title'); title.textContent = k.code;
+    const title = s('title'); title.textContent = k.code + (k.capacity ? ` · 👥 ${k.capacity}` : '');
     g.append(shape, t, title);
+    if (k.capacity && Math.min(p.w, p.h) > 16) {
+      t.setAttribute('y', -fs * .35);
+      const c = s('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': fs * .72, y: fs * .62, class: 'cap' });
+      c.textContent = '👥' + k.capacity; g.append(c);
+    }
   }
   paint() {
     this.patBg.setAttribute('fill', this.colors.available || '#2e8b57');

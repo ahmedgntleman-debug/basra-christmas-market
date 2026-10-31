@@ -4,6 +4,7 @@ import {
   todayISO, addDays, daysBetween, badge, PAY_LABEL, RES_LABEL, waLink, esc, fmtDateTime,
 } from './common.js';
 import { celebrate } from './festive.js';
+import { THEMES, UNITS, printLogo } from './themes.js';
 import { S, can, refresh, settings, kioskById, kioskByCode, customerById, codeSort, DEFAULT_CONTRACT, DEFAULT_SPONSOR_CONTRACT } from './state.js';
 
 export const DEAL_LABEL = { rental: 'إيجار كشك', sponsorship: 'رعاية' };
@@ -158,8 +159,20 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
   const method = h('select', { class: 'in' }, METHODS.map(m => h('option', {}, m)));
   const deadline = h('input', { class: 'in', type: 'date' });
   const notes = h('textarea', { class: 'in', placeholder: 'ملاحظات (اختياري)' });
+  const guests = h('input', { class: 'in', type: 'number', min: 0, inputmode: 'numeric', placeholder: 'اختياري' });
+  const capOut = h('span', { class: 'hint' });
+  const capTotal = () => kp.ids.reduce((a, id) => a + (kioskById(id)?.capacity || 0), 0);
+  const recap = () => {
+    const c = capTotal(), g = +guests.value || 0;
+    capOut.textContent = c ? (g > c ? `⚠ العدد أكبر من السعة (${c})` : `السعة: ${c} أشخاص`) : '';
+    capOut.style.color = c && g > c ? 'var(--bad)' : '';
+    if (c && !guests.dataset.touched) guests.placeholder = String(c);
+  };
+  guests.oninput = () => { guests.dataset.touched = '1'; recap(); };
+  const showGuests = E.unit_kind && E.unit_kind !== 'kiosk' || S.kiosks.some(k => k.capacity);
 
   const recheck = () => {
+    recap();
     const ok = start.value && end.value && end.value >= start.value;
     daysOut.textContent = ok ? `${daysBetween(start.value, end.value)} يوماً` : 'تاريخ النهاية قبل البداية';
     const c = ok ? conflicts(kp.ids, start.value, end.value) : [];
@@ -175,6 +188,7 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
     field('العميل أو الجهة', cp.el),
     h('div', { class: 'grid2' }, field('من تاريخ', start), field('إلى تاريخ', end)),
     h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginTop: '-6px' } }, daysOut, fullBtn),
+    showGuests ? field('عدد الأشخاص', guests, capOut) : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, seg, dealSeg), holdRow),
     h('label', { class: 'f' }, priceLabel, price.inp, h('span', {}, price.out, h('span', { class: 'hint' }, ' — اتركه فارغاً إذا لم يُتفق على السعر بعد'))),
     h('details', {}, h('summary', { class: 'hint', style: { cursor: 'pointer' } }, 'خصم أو رسوم إضافية'),
@@ -201,6 +215,7 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
       agreed_amount: price.get(), discount: discount.get() || 0, extra_charges: extra.get() || 0,
       first_payment: pay.get(), payment_method: method.value, payment_deadline: deadline.value || null,
       notes: notes.value.trim(), deal_type: deal, ...cust,
+      guests: guests.value ? Math.max(0, Math.round(+guests.value)) : null,
     };
     save.disabled = true; save.textContent = 'جارٍ الحفظ…';
     const { data, error } = await sb.rpc('create_reservation', { p });
@@ -259,7 +274,7 @@ export async function openReservation(id) {
     h('div', { class: 'grid3' },
       stat('الأكشاك', r.kiosk_codes.join('، ') || '—', true),
       stat('الفترة', `${fmtDate(r.start_date)} – ${fmtDate(r.end_date)}`),
-      stat('عدد الأيام', r.days + ' يوماً')),
+      stat('عدد الأيام', r.days + ' يوماً'), r.guests ? stat('عدد الأشخاص', '👥 ' + r.guests) : null),
     h('div', { class: 'grid3', style: { padding: '14px', background: '#f7faf8', borderRadius: '10px' } },
       stat('المبلغ الكلي', h('span', { class: r.total == null ? '' : 'num' }, money(r.total)), true),
       stat('المدفوع', h('span', { class: 'num' }, money(r.paid)), true),
@@ -439,13 +454,14 @@ export function openEditReservation(id, { confirm = false } = {}) {
   const deadline = h('input', { class: 'in', type: 'date', value: r.payment_deadline || '' });
   const dealSel = h('select', { class: 'in' }, Object.entries(DEAL_LABEL).map(([v, l]) => h('option', { value: v, selected: (r.deal_type || 'rental') === v }, l)));
   const notes = h('textarea', { class: 'in' }, r.notes || '');
+  const guests = h('input', { class: 'in', type: 'number', min: 0, value: r.guests ?? '', placeholder: 'اختياري' });
   const save = h('button', { class: 'btn primary' }, 'حفظ التعديلات');
   const m = modal({
     title: 'تعديل الحجز — ' + r.kiosk_codes.join('، '),
     body: [field('العميل', cp.el), h('div', { class: 'grid3' }, field('من', start), field('إلى', end), field('الحالة', status)), field('نوع الاتفاق', dealSel),
       field('مبلغ الإيجار المتفق عليه', price.inp, h('span', {}, price.out, h('span', { class: 'hint' }, ' — فارغ يعني السعر غير محدد'))),
       h('div', { class: 'grid3' }, field('خصم', discount.inp, discount.out), field('رسوم إضافية', extra.inp, extra.out), field('موعد التسديد', deadline)),
-      field('ملاحظات', notes)],
+      field('عدد الأشخاص', guests), field('ملاحظات', notes)],
     footer: [save, h('button', { class: 'btn', onclick: () => m.close() }, 'إلغاء')],
   });
   save.onclick = async () => {
@@ -465,6 +481,7 @@ export function openEditReservation(id, { confirm = false } = {}) {
       hold_until: status.value === 'held' ? r.hold_until : null,
       agreed_amount: price.get(), discount: discount.get() || 0, extra_charges: extra.get() || 0,
       payment_deadline: deadline.value || null, notes: notes.value.trim() || null, deal_type: dealSel.value,
+      guests: guests.value === '' ? null : Math.max(0, Math.round(+guests.value)),
     };
     save.disabled = true;
     const { error } = await sb.from('reservations').update(upd).eq('id', id);
@@ -594,6 +611,7 @@ export function fillTemplate(tpl, r) {
     remaining: r.remaining == null ? '..................' : money(r.remaining),
     deadline: r.payment_deadline ? fmtDate(r.payment_deadline) : '..................', today: fmtDateLong(todayISO()),
     notes: r.notes ? 'ملاحظات: ' + r.notes : '', contact: c.contact_person || '..................',
+    guests: r.guests ? fmtNum(r.guests) : '..................', unit: (UNITS[E.unit_kind] || UNITS.kiosk).one, venue: E.venue || '..................',
   };
   return tpl.replace(/\{(\w+)\}/g, (m0, k) => (k in map ? map[k] : m0));
 }
@@ -605,28 +623,30 @@ export function openContract(resId, { body } = {}) {
   const text = body || fillTemplate(sponsor ? (settings().sponsor_template || DEFAULT_SPONSOR_CONTRACT) : (settings().contract_template || DEFAULT_CONTRACT), r);
   const w = window.open('', '_blank');
   if (!w) return toast('اسمح بالنوافذ المنبثقة لهذا الموقع لتتمكن من فتح العقد', { error: true });
-  const logo = S.edition?.settings?.logo_url || new URL('img/logo-static.svg', location.href).href;
+  const E = S.edition || {}, T = THEMES[E.event_type] || THEMES.christmas, U = UNITS[E.unit_kind] || UNITS.kiosk, C = T.c;
+  const logo = E.logo_url || E.settings?.logo_url || printLogo(E);
+  const when = E.start_date === E.end_date ? fmtDateLong(E.start_date) : `${fmtDateLong(E.start_date)} — ${fmtDateLong(E.end_date)}`;
   w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(contractName(r.deal_type))} ${esc(r.kiosk_codes.join('-'))} — ${esc(r.customer_name || '')}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lalezar&family=Readex+Pro:wght@400;600&display=swap">
 <style>@page{size:A4;margin:14mm 16mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{font-family:"Readex Pro",Tahoma,sans-serif;color:#1d2420;max-width:780px;margin:24px auto;padding:0 16px;font-size:15px;line-height:1.9;background:#f4efe6}
-.bar{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#16402a,#1f5236);color:#fff;padding:10px 14px;border-radius:14px;display:flex;gap:8px;align-items:center;margin-bottom:20px;flex-wrap:wrap;box-shadow:0 8px 24px rgba(0,0,0,.15)}
-.bar button{font:inherit;border:0;border-radius:10px;padding:8px 14px;cursor:pointer}.bar .p{background:linear-gradient(180deg,#d8333a,#a81d25);color:#fff;font-weight:600}
+.bar{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,${C.dark},${C.dark2});color:#fff;padding:10px 14px;border-radius:14px;display:flex;gap:8px;align-items:center;margin-bottom:20px;flex-wrap:wrap;box-shadow:0 8px 24px rgba(0,0,0,.15)}
+.bar button{font:inherit;border:0;border-radius:10px;padding:8px 14px;cursor:pointer}.bar .p{background:linear-gradient(180deg,${C.hi},${C.primary});color:#fff;font-weight:600}
 .bar span{font-size:13px;opacity:.85;margin-inline-start:auto}
 .sheet{background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.12);padding:0 34px 26px;position:relative;overflow:hidden}
-.ribbon{height:9px;margin:0 -34px 18px;background:repeating-linear-gradient(-45deg,#b3212a 0 9px,#fff 9px 14px,#2f6b45 14px 23px,#fff 23px 28px)}
-.head{display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:2px solid #b3212a;padding-bottom:12px;margin-bottom:18px}
-.head img{height:92px;width:auto}.head .t{text-align:start}.head h1{font-family:Lalezar,"Readex Pro",serif;font-weight:400;font-size:26px;margin:0;color:#16402a;line-height:1.2}
+.ribbon{height:9px;margin:0 -34px 18px;background:repeating-linear-gradient(-45deg,${C.primary} 0 9px,#fff 9px 14px,${C.mid} 14px 23px,#fff 23px 28px)}
+.head{display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:2px solid ${C.primary};padding-bottom:12px;margin-bottom:18px}
+.head img{height:92px;width:auto}.head .t{text-align:start}.head h1{font-family:Lalezar,"Readex Pro",serif;font-weight:400;font-size:26px;margin:0;color:${C.dark};line-height:1.2}
 .head .t small{display:block;color:#8a6d4d;font-size:13px}
-.foot{margin-top:26px;padding-top:10px;border-top:1px dashed #d4a73c;display:flex;justify-content:space-between;font-size:12px;color:#8a6d4d}
+.foot{margin-top:26px;padding-top:10px;border-top:1px dashed ${C.gold};display:flex;justify-content:space-between;font-size:12px;color:#8a6d4d}
 #doc{white-space:pre-wrap;outline:none;min-height:400px}#doc:focus{background:#fffbf1}
 @media print{.bar{display:none}body{margin:0;background:#fff;max-width:none;padding:0}.sheet{box-shadow:none;padding:0 4px}.ribbon{margin:0 0 16px}}</style></head><body>
 <div class="bar"><button class="p" onclick="print()">طباعة</button><button onclick="print()">حفظ PDF</button>${can.pay() ? '<button id="sv" onclick="bcmSave(document.getElementById(\'doc\').innerText)">حفظ في سجل العميل</button>' : ''}<button onclick="close()">ليس الآن</button>
 <span>يمكنك تعديل نص العقد مباشرة قبل الطباعة. لحفظه PDF اختر «Save as PDF» في نافذة الطباعة.</span></div>
 <div class="sheet"><div class="ribbon"></div>
-<div class="head"><div class="t"><h1>${esc(contractName(r.deal_type))}</h1><small>${esc(S.edition?.name || '')} · ${esc(fmtDateLong(S.edition?.start_date))} — ${esc(fmtDateLong(S.edition?.end_date))}</small><small>الكشك: ${esc(r.kiosk_codes.join('، '))}</small></div><img src="${esc(logo)}" alt="Market Christmas"></div>
+<div class="head"><div class="t"><h1>${esc(contractName(r.deal_type))}</h1><small>${esc(E.name || '')} · ${esc(when)}${E.venue ? ' · ' + esc(E.venue) : ''}</small><small>${esc(U.one)}: ${esc(r.kiosk_codes.join('، '))}${r.guests ? ' · 👥 ' + r.guests : ''}</small></div>${logo ? `<img src="${esc(logo)}" alt="">` : `<div style="font-size:64px">${T.icon}</div>`}</div>
 <div id="doc" contenteditable="true">${esc(text)}</div>
-<div class="foot"><span>Market Christmas — Santa\'s Factory · ${esc(S.edition?.name || '')}</span><span>✦ عيد ميلاد مجيد وعام سعيد ✦</span></div></div></body></html>`);
+<div class="foot"><span>${E.event_type === 'christmas' || !E.event_type ? 'Market Christmas — Santa\'s Factory · ' : ''}${esc(E.name || '')}</span><span>✦ ${esc(T.greeting)} ✦</span></div></div></body></html>`);
   w.document.close();
   w.bcmSave = async txt => {
     const btn = w.document.getElementById('sv');

@@ -3,6 +3,7 @@
 import { sb, h, $, toast, errText, money, fmtNum, fmtDate, fmtDateLong, fmtDateTime, todayISO, addDays, daysBetween, parseAmount, modal, confirmBox, esc } from './common.js';
 import { S, can, refresh } from './state.js';
 import { field } from './booking.js';
+import { printLogo, THEMES } from './themes.js';
 import { openDailyEntry } from './pages.js';
 
 export const KIND = {
@@ -510,7 +511,7 @@ function printPnl(P) {
   const E = S.edition;
   const w = window.open('', '_blank');
   if (!w) return toast('اسمح بالنوافذ المنبثقة لهذا الموقع لتتمكن من فتح التقرير', { error: true });
-  const logo = new URL('img/logo-static.svg', location.href).href;
+  const logo = E.logo_url || printLogo(E), TT = THEMES[E.event_type] || THEMES.christmas, TI = TT.icon, C = TT.c;
   const R = statementRows(P);
   const neg = P.net < 0;
   const card = (l, v, s, cls = '') => `<div class="k ${cls}"><span>${esc(l)}</span><b>${v}</b>${s ? `<small>${esc(s)}</small>` : ''}</div>`;
@@ -526,29 +527,29 @@ function printPnl(P) {
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lalezar&family=Readex+Pro:wght@400;500;600;700&display=swap">
 <style>@page{size:A4;margin:12mm 13mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{font-family:"Readex Pro",Tahoma,sans-serif;color:#1d2420;margin:0;background:#efe9df;font-size:12.5px;line-height:1.55}
-.tool{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#16402a,#1f5236);color:#fff;padding:10px 16px;display:flex;gap:8px;align-items:center}
+.tool{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,${C.dark},${C.dark2});color:#fff;padding:10px 16px;display:flex;gap:8px;align-items:center}
 .tool button{font:inherit;border:0;border-radius:10px;padding:8px 14px;cursor:pointer}.tool .p{background:linear-gradient(180deg,#d8333a,#a81d25);color:#fff;font-weight:600}.tool span{margin-inline-start:auto;font-size:12px;opacity:.85}
 .page{max-width:800px;margin:18px auto;background:#fff;box-shadow:0 10px 40px rgba(0,0,0,.12);padding:0 30px 26px;position:relative}
-.rib{height:9px;margin:0 -30px;background:repeating-linear-gradient(-45deg,#b3212a 0 9px,#fff 9px 14px,#2f6b45 14px 23px,#fff 23px 28px)}
-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0 12px;border-bottom:2px solid #b3212a}
-header img{height:84px}header h1{font-family:Lalezar,serif;font-weight:400;font-size:30px;color:#16402a;margin:0;line-height:1.1}
+.rib{height:9px;margin:0 -30px;background:repeating-linear-gradient(-45deg,${C.primary} 0 9px,#fff 9px 14px,${C.mid} 14px 23px,#fff 23px 28px)}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0 12px;border-bottom:2px solid ${C.primary}}
+header img{height:84px}header h1{font-family:Lalezar,serif;font-weight:400;font-size:30px;color:${C.dark};margin:0;line-height:1.1}
 header p{margin:2px 0 0;color:#8a6d4d;font-size:12.5px}
 .ks{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0}
-.k{border:1px solid #ece2d6;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;border-top:4px solid #2f6b45}
+.k{border:1px solid #ece2d6;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;border-top:4px solid ${C.mid}}
 .k span{color:#8a6d4d;font-size:11.5px}.k b{font-size:17px;direction:ltr;text-align:right;font-variant-numeric:tabular-nums}.k small{color:#7f8984;font-size:10.5px}
-.k.net{border-top-color:#d4a73c;background:#fffaf0}.k.loss{border-top-color:#b3212a;background:#fff5f4}.k.loss b{color:#b3212a}
-h2{font-family:Lalezar,serif;font-weight:400;font-size:19px;color:#16402a;margin:18px 0 8px}h2:before{content:"✦ ";color:#d4a73c;font-size:14px}
+.k.net{border-top-color:${C.gold};background:#fffaf0}.k.loss{border-top-color:${C.primary};background:#fff5f4}.k.loss b{color:${C.primary}}
+h2{font-family:Lalezar,serif;font-weight:400;font-size:19px;color:${C.dark};margin:18px 0 8px}h2:before{content:"✦ ";color:${C.gold};font-size:14px}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 10px;text-align:start}th{background:#fdf7ee;color:#8a6d4d;font-weight:500;font-size:11.5px;border-bottom:1px solid #e3d8ca}
 .m{text-align:end;direction:ltr;font-variant-numeric:tabular-nums;white-space:nowrap}
-.st tr.h td{background:#16402a;color:#fff;font-weight:600;font-size:12.5px;padding:7px 10px}
+.st tr.h td{background:${C.dark};color:#fff;font-weight:600;font-size:12.5px;padding:7px 10px}
 .st tr.line td{border-bottom:1px solid #f1ebe2}.st tr.line td:first-child{padding-inline-start:22px}
 .st tr.e td{color:#9aa39e;font-style:italic;padding-inline-start:22px}
 .st tr.sub td{font-weight:700;border-top:1px solid #cbbfae;background:#fbf7f0}
-.st tr.total td{font-weight:700;background:#eef5ef;border-top:2px solid #2f6b45;font-size:13.5px}
-.st tr.grand td{font-weight:800;font-size:15px;background:#16402a;color:#fff;padding:9px 10px}
+.st tr.total td{font-weight:700;background:#eef5ef;border-top:2px solid ${C.mid};font-size:13.5px}
+.st tr.grand td{font-weight:800;font-size:15px;background:${C.dark};color:#fff;padding:9px 10px}
 .st tr.grand.neg td{background:#8c161d}
 .st em{font-style:normal;color:#9aa39e;font-size:11px}
-.neg{color:#b3212a}
+.neg{color:${C.primary}}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .pl-mix{display:flex;flex-direction:column;gap:6px}.pl-mix-r{display:grid;grid-template-columns:minmax(90px,1.3fr) 2fr auto 40px;gap:8px;align-items:center;font-size:11.5px}
 .pl-mix-r .b{height:9px;background:#f3eee6;border-radius:5px;overflow:hidden}.pl-mix-r .b i{display:block;height:100%;border-radius:0 5px 5px 0}
@@ -557,12 +558,12 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 10px;text-align:star
 .dt td{border-bottom:1px solid #f1ebe2;font-size:11.5px;padding:4px 8px}.dt tfoot td{font-weight:700;border-top:2px solid #cbbfae}
 .notes{margin:14px 0 0;padding:10px 14px 10px 10px;background:#fdf7ee;border-radius:10px;color:#6b5a45;font-size:11px}.notes li{margin:2px 0}
 .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:34px;font-size:12px;text-align:center}.sign div{border-top:1px solid #bbb;padding-top:6px;color:#4a5550}
-footer{display:flex;justify-content:space-between;color:#8a6d4d;font-size:10.5px;margin-top:20px;border-top:1px dashed #d4a73c;padding-top:8px}
+footer{display:flex;justify-content:space-between;color:#8a6d4d;font-size:10.5px;margin-top:20px;border-top:1px dashed ${C.gold};padding-top:8px}
 .break{break-before:page}
 @media print{body{background:#fff}.tool{display:none}.page{box-shadow:none;margin:0;max-width:none;padding:0}.rib{margin:0}}</style></head><body>
 <div class="tool"><button class="p" onclick="print()">طباعة / حفظ PDF</button><button onclick="close()">إغلاق</button><span>لحفظه PDF اختر «Save as PDF» من نافذة الطباعة.</span></div>
 <div class="page"><div class="rib"></div>
-<header><div><h1>قائمة الأرباح والخسائر</h1><p>${esc(E.name)} · ${esc(periodLabel(P))}</p><p>${esc(basisLabel(P.basis))} · أُعدّ في ${esc(fmtDateTime(new Date()))}</p></div><img src="${logo}" alt="Market Christmas"></header>
+<header><div><h1>قائمة الأرباح والخسائر</h1><p>${esc(E.name)} · ${esc(periodLabel(P))}</p><p>${esc(basisLabel(P.basis))} · أُعدّ في ${esc(fmtDateTime(new Date()))}</p></div>${logo ? `<img src="${esc(logo)}" alt="">` : `<div style="font-size:60px">${TI}</div>`}</header>
 <div class="ks">
 ${card('إجمالي الإيرادات', fmtNum(P.revenue))}
 ${card('إجمالي المصاريف', fmtNum(P.expenses), `يومية ${fmtNum(P.dexp)} · تشغيلية ${fmtNum(P.opex)}`)}
@@ -577,7 +578,7 @@ ${dayRows.length ? `<h2>الإيرادات والمصاريف يوماً بيو�
 <tfoot><tr><td>المجموع</td><td class="m">${fmtNum(P.visitors)}</td><td class="m">${fmtNum(P.revenue)}</td><td class="m">${fmtNum(P.expenses)}</td><td class="m ${neg ? 'neg' : ''}">${signed(P.net)}</td><td></td></tr></tfoot></table>` : ''}
 <ul class="notes">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
 <div class="sign"><div>أعدّه</div><div>دقّقه</div><div>اعتمده</div></div>
-<footer><span>Market Christmas — Santa's Factory · Horizon Basra</span><span>${esc(E.name)}</span></footer>
+<footer><span>${(E.event_type || 'christmas') === 'christmas' ? "Market Christmas — Santa's Factory · " : ''}Horizon Basra</span><span>${esc(E.name)}</span></footer>
 </div></body></html>`);
   w.document.close();
 }

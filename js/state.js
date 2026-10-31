@@ -1,5 +1,7 @@
 // App state for the admin portal: loaded from Supabase, refreshed live on changes.
 import { sb, toast, errText } from './common.js';
+import { applyTheme, rememberBrand, THEMES, UNITS } from './themes.js';
+import { setTerms } from './i18n.js';
 
 export const S = {
   user: null,
@@ -49,9 +51,38 @@ export async function loadEditions() {
   const { data, error } = await sb.from('editions').select('*').order('start_date', { ascending: false });
   if (error) throw error;
   S.editions = data;
-  const saved = localStorage.getItem('bcm.edition');
-  S.edition = data.find(e => e.id === saved) || data.find(e => !e.archived) || data[0] || null;
+  // ?p=<slug> opens that project directly; otherwise this tab's last choice; otherwise the nearest one
+  const qp = new URLSearchParams(location.search), want = qp.get('p') || qp.get('e');
+  let saved = null; try { saved = sessionStorage.getItem('bcm.edition'); } catch {}
+  S.edition = (want && data.find(e => e.slug === want)) || data.find(e => e.id === saved) || nearestProject(data) || data[0] || null;
+  applyProject(S.edition);
+  syncProjectUrl();
 }
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Baghdad' }).format(new Date());
+export const isActive = e => !e.archived && e.end_date >= today();
+// the running project (the most recently started one if several overlap), else the next upcoming one
+export function nearestProject(list = S.editions) {
+  const t = today();
+  const act = list.filter(isActive).sort((a, b) => (a.start_date > t ? a.start_date : t).localeCompare(b.start_date > t ? b.start_date : t) || b.start_date.localeCompare(a.start_date));
+  return act[0] || list.filter(e => !e.archived).sort((a, b) => b.end_date.localeCompare(a.end_date))[0] || null;
+}
+export const adminLink = E => { const u = new URL('index.html', location.href); u.search = '?p=' + encodeURIComponent(E.slug); return u.href; };
+export const publicLink = E => new URL('public.html?e=' + encodeURIComponent(E.slug), location.href).href;
+function syncProjectUrl() {
+  if (!S.edition) return;
+  try { sessionStorage.setItem('bcm.edition', S.edition.id); } catch {}
+  const u = new URL(location.href);
+  if (u.searchParams.get('p') !== S.edition.slug) { u.searchParams.delete('e'); u.searchParams.set('p', S.edition.slug); history.replaceState(null, '', u.pathname + u.search + u.hash); }
+}
+// colours, decorations and wording follow the open project
+export function applyProject(E) {
+  if (!E) return;
+  const T = applyTheme(E.event_type || 'christmas');
+  setTerms({ unit: E.unit_kind || 'kiosk', noun: T.noun });
+  rememberBrand(E);
+}
+export const unitOf = (E = S.edition) => UNITS[E?.unit_kind] || UNITS.kiosk;
+export const themeOf = (E = S.edition) => THEMES[E?.event_type] || THEMES.christmas;
 
 export async function loadEditionData() {
   if (!S.edition) { S.kiosks = []; S.reservations = []; S.payments = []; return; }
@@ -86,8 +117,12 @@ export async function refresh({ quiet = true } = {}) {
 }
 
 export async function switchEdition(id) {
+  const before = S.edition;
   S.edition = S.editions.find(e => e.id === id) || S.edition;
-  localStorage.setItem('bcm.edition', S.edition?.id || '');
+  syncProjectUrl();
+  // a different theme or unit rebuilds the decorations and wording: reload once
+  if (before && (before.event_type !== S.edition.event_type || before.unit_kind !== S.edition.unit_kind || before.logo_url !== S.edition.logo_url)) { location.reload(); return; }
+  applyProject(S.edition);
   await refresh({ quiet: false });
 }
 

@@ -17,11 +17,11 @@
 <link rel="stylesheet" href="css/festive.css">
 <style>
   body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; background:
-    radial-gradient(800px 380px at 85% -10%, rgba(179,33,42,.55), transparent 70%),
+    radial-gradient(800px 380px at 85% -10%, color-mix(in srgb, var(--t-primary) 55%, transparent), transparent 70%),
     radial-gradient(circle at 12% 30%, rgba(255,214,120,.3) 0 2px, transparent 3px),
     radial-gradient(circle at 46% 18%, rgba(255,255,255,.25) 0 1.5px, transparent 2.5px),
     radial-gradient(circle at 70% 52%, rgba(255,214,120,.25) 0 2px, transparent 3px),
-    linear-gradient(180deg, #0f2e1d, #16402a 70%, #1b4a30); }
+    linear-gradient(180deg, var(--t-deep), var(--t-dark) 70%, var(--t-dark2)); }
   .pub-top { color: #fff; padding: 12px 18px 14px; display: flex; flex-direction: column; gap: 10px; position: relative; z-index: 6; }
   .pub-logo { height: clamp(58px, 11vw, 92px); width: auto; display: block; filter: drop-shadow(0 6px 14px rgba(0,0,0,.35)); cursor: pointer; transition: transform .3s; }
   .pub-logo:hover { transform: rotate(-3deg) scale(1.04); }
@@ -72,14 +72,16 @@
   .contact .btn { min-height: 38px; padding: 0 14px; }
   .closed { color: #fff; text-align: center; margin: auto; padding: 30px; }
   .credit { position: absolute; bottom: 10px; inset-inline-start: 12px; font-size: 11px; color: var(--ink-3); background: rgba(255,255,255,.8); padding: 2px 8px; border-radius: 6px; z-index: 2; }
+  .pub-tools { flex-wrap: wrap; align-items: center; }
+  .pub-tools select.proj-sel { width: auto; flex: 0 1 auto; max-width: 260px; height: 32px; background: rgba(255,255,255,.95); color: #1d2420; border: 1px solid var(--t-gold); border-radius: 999px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,.2); cursor: pointer; }
 </style>
 </head>
 <body>
   <header class="pub-top">
-    <div class="pub-head"><img class="pub-logo" id="pub-logo" src="img/logo-dark.svg" alt="Market Christmas — Santa's Factory">
-      <div class="pub-title" style="flex-direction:column;gap:2px;align-items:flex-start"><h1 id="t-name">Basra Christmas Market</h1><p>خريطة الأكشاك المتوفرة للحجز</p></div>
+    <div class="pub-head"><span id="pub-logo"></span>
+      <div class="pub-title" style="flex-direction:column;gap:2px;align-items:flex-start"><h1 id="t-name"></h1><p>خريطة الأكشاك المتوفرة للحجز</p><span class="pub-venue" id="t-when"></span></div>
       <div id="count-host" style="display:contents"></div>
-      <div class="pub-tools" id="pub-tools"><button id="lang-toggle" class="btn small" type="button">English</button></div></div>
+      <div class="pub-tools" id="pub-tools"><select id="proj-sel" class="proj-sel" aria-label="المشروع" hidden></select><button id="lang-toggle" class="btn small" type="button">English</button></div></div>
     <div class="pub-ctl">
       <label for="from">من</label><input id="from" class="in" type="date">
       <label for="to">إلى</label><input id="to" class="in" type="date">

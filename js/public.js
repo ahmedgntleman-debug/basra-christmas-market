@@ -2,10 +2,12 @@
 // returns only kiosk codes, shapes and availability — never names, phones or money.
 import { sb, configured, $, h, fmtDate, waLink, normDigits, DEFAULT_COLORS, statusBg } from './common.js';
 import { MapView } from './map.js';
-import { startI18n, isEn } from './i18n.js';
+import { startI18n, isEn, setTerms } from './i18n.js';
+import { applyTheme, logoNode, UNITS, THEMES } from './themes.js';
 import { initFestive, garland, sleigh, countdown, toggleButton, soundButton, jingle, burst } from './festive.js';
 
-const slug = new URLSearchParams(location.search).get('e') || (window.BCM_CONFIG?.DEFAULT_EDITION || 'bcm-2026');
+// a project link opens that project; the bare link opens the nearest running / upcoming project
+let slug = new URLSearchParams(location.search).get('e') || null;
 const fromI = $('#from'), toI = $('#to'), q = $('#q');
 let data = null, mv = null, selected = null, edition = null;
 
@@ -22,16 +24,22 @@ async function load(first) {
   const { data: d, error } = await sb.rpc('get_public_map', { p_slug: slug, p_from: fromI.value || null, p_to: toI.value || null });
   if (error) { if (first) closed('تعذر تحميل الخريطة. تحقق من الاتصال بالإنترنت ثم أعد تحميل الصفحة.'); return; }
   if (!d) return closed('خريطة الحجز غير متاحة حالياً.');
-  data = d; edition = d.edition;
+  data = d; edition = d.edition; slug = edition.slug;
   if (first) {
+    const T = applyTheme(edition.event_type || 'christmas');
+    setTerms({ unit: edition.unit_kind || 'kiosk', noun: T.noun });
     document.title = `خريطة الأكشاك المتوفرة للحجز — ${edition.name}`;
     $('#t-name').textContent = edition.name;
+    projectSwitcher(d.projects || []);
+    const lg = logoNode(edition, 'pub'); lg.onclick = e => { jingle(); burst(e.clientX, e.clientY, 18); }; $('#pub-logo').replaceChildren(lg);
+    const one = edition.start_date === edition.end_date;
+    $('#t-when').textContent = [one ? fmtDate(edition.start_date) : `${fmtDate(edition.start_date)} – ${fmtDate(edition.end_date)}`, edition.event_time ? 'الساعة ' + edition.event_time : '', edition.venue ? '📍 ' + edition.venue : ''].filter(Boolean).join(' · ');
     fromI.value = d.from; toI.value = d.to;
     fromI.min = toI.min = addDaysISO(edition.start_date, -30);
     fromI.max = toI.max = addDaysISO(edition.end_date, 30);
     mv = new MapView($('#map'), { onSelect: k => { selected = k.code; sheet(); }, onBackground: () => { selected = null; sheet(); } });
     mv.setMap(edition.map_url, edition.map_w, edition.map_h);
-    $('#count-host').replaceWith(countdown(edition.start_date, edition.end_date));
+    $('#count-host').replaceWith(countdown(edition.start_date, edition.end_date, edition.event_time));
   }
   const kiosks = d.kiosks.map(k => ({ ...k, id: k.code, needs_verify: false }));
   mv.setColors({ ...DEFAULT_COLORS, ...(edition.colors || {}) });
@@ -43,6 +51,17 @@ async function load(first) {
   filter();
   sheet();
   $('#updated').textContent = 'آخر تحديث ' + new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Baghdad', timeStyle: 'short' }).format(new Date());
+}
+
+function projectSwitcher(list) {
+  const sel = $('#proj-sel');
+  if (!sel || list.length < 2) return;
+  sel.replaceChildren(...list.map(p => {
+    const T = THEMES[p.event_type] || THEMES.christmas;
+    return h('option', { value: p.slug, selected: p.slug === edition.slug }, `${T.icon} ${p.name} — ${p.start_date === p.end_date ? fmtDate(p.start_date) : fmtDate(p.start_date) + ' – ' + fmtDate(p.end_date)}`);
+  }));
+  sel.hidden = false;
+  sel.onchange = () => { const u = new URL(location.href); u.searchParams.set('e', sel.value); location.href = u.href; };
 }
 
 function legend() {
@@ -67,14 +86,16 @@ function sheet() {
   if (!k) { host.replaceChildren(); return; }
   const c = { ...DEFAULT_COLORS, ...(edition.colors || {}) };
   const open = k.status === 'available' || k.status === 'partial';
-  const msg = isEn() ? `Hello, I would like to ask about booking kiosk ${k.code} at ${edition.name} from ${fmtDate(data.from)} to ${fmtDate(data.to)}.`
-    : `مرحباً، أود الاستفسار عن حجز الكشك رقم ${k.code} في ${edition.name} للفترة من ${fmtDate(data.from)} إلى ${fmtDate(data.to)}.`;
+  const U = UNITS[edition.unit_kind] || UNITS.kiosk, one = data.from === data.to;
+  const msg = isEn() ? `Hello, I would like to ask about booking ${U.en} ${k.code} at ${edition.name} ${one ? 'on ' + fmtDate(data.from) : `from ${fmtDate(data.from)} to ${fmtDate(data.to)}`}.`
+    : `مرحباً، أود الاستفسار عن حجز ${U.one} رقم ${k.code} في ${edition.name} ${one ? 'بتاريخ ' + fmtDate(data.from) : `للفترة من ${fmtDate(data.from)} إلى ${fmtDate(data.to)}`}.`;
   host.replaceChildren(h('div', { class: 'sheet', role: 'dialog', 'aria-label': 'الكشك ' + k.code },
     h('div', { class: 'row' },
       h('span', { class: 'code' }, k.code),
       h('span', { class: 'status-pill', style: { background: statusBg(k.status, c) || '#888', color: '#fff', padding: '4px 12px', borderRadius: '999px', fontWeight: 600, fontSize: '13px' } }, LEG[k.status]),
       h('button', { class: 'x', 'aria-label': 'إغلاق', onclick: () => { selected = null; mv.setSelected([]); sheet(); } }, '×')),
     h('p', { class: 'msg' }, TEXT[k.status](k.code)),
+    k.capacity ? h('p', { class: 'hint', style: { margin: 0, fontSize: '15px' } }, `👥 تتسع لـ ${k.capacity} ${k.capacity > 10 || k.capacity < 3 ? 'شخص' : 'أشخاص'}`) : null,
     open ? h('p', { class: 'hint', style: { fontSize: '14px' } }, `للاستفسار يرجى التواصل مع إدارة ${edition.name}.`) : null,
     open ? contactsBlock(msg) : null));
   mv.setSelected([k.code]);
@@ -110,11 +131,12 @@ q.oninput = filter;
 q.onkeydown = e => { if (e.key === 'Enter') { const s = normDigits(q.value).trim().toUpperCase().replace(/\s+/g, ''); if (data.kiosks.some(k => k.code === s)) { selected = s; sheet(); mv.focus(s); } } };
 
 startI18n();
-initFestive({ density: 70 });
-garland($('.pub-top'));
-sleigh({ first: 2500 });
 $('#pub-tools').prepend(toggleButton(), soundButton());
-$('#pub-logo').onclick = e => { jingle(); burst(e.clientX, e.clientY, 18); };
-load(true);
+// decorations follow the project's theme, so they start once the project is known
+load(true).finally(() => {
+  initFestive({ density: 70 });
+  garland($('.pub-top'));
+  sleigh({ first: 2500 });
+});
 setInterval(() => { if (!document.hidden) load(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && data) load(); });

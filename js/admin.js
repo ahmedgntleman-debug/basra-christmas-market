@@ -9,6 +9,9 @@ import { openBooking, openReservation, openPayment, openReminder, openCustomer, 
 import { pageReservations, pageCustomers, pageReports, pageSettings, openDailyEntry } from './pages.js';
 import { openAssistant, assistantReady } from './assistant.js';
 import { pagePnl } from './pnl.js';
+import { applyTheme, logoNode, rememberedBrand, theme, THEMES } from './themes.js';
+import { openNewProject } from './projects.js';
+import { applyProject, unitOf, isActive } from './state.js';
 import { startI18n } from './i18n.js';
 import { initFestive, garland, baubles, countdown, tree, toggleButton, soundButton, soundOn, festiveOn, burst, jingle, sleigh } from './festive.js';
 
@@ -63,6 +66,11 @@ function showSetupNeeded() {
 
 function showLogin() {
   $('#login').hidden = false;
+  // show the brand of the last project used on this device
+  const brand = rememberedBrand();
+  if (brand) applyTheme(brand.event_type || 'christmas');
+  $('#login-logo').replaceChildren(logoNode(brand || { event_type: 'christmas' }, 'login'));
+  if (brand?.name) $('#login-sub').textContent = brand.name + ' — إدارة الحجوزات';
   $('#app').hidden = true;
   initFestive({ density: 90 });
   if (!document.querySelector('.fx-sleigh')) sleigh({ first: 3000 });
@@ -90,22 +98,29 @@ function shell() {
   const mini = (txt, title, fn) => { const b = h('button', { class: 'fx-mini', type: 'button', title, 'aria-label': title }, txt); b.onclick = () => { fn(); b.textContent = txt === '❄' ? (festiveOn() ? '❄' : '☁') : (soundOn() ? '🔔' : '🔕'); }; return b; };
   const ref = $('.top .mobile-out');
   ref.before(mini(festiveOn() ? '❄' : '☁', 'الزينة', () => $('.nav .foot .fx-toggle').click()), mini(soundOn() ? '🔔' : '🔕', 'الأصوات', () => $$('.nav .foot .fx-toggle')[1].click()));
-  const nl = $('#nav-logo'); if (nl) nl.onclick = e => { jingle(); burst(e.clientX, e.clientY, 16); };
+  const paintLogo = () => { const n = logoNode(S.edition, 'nav'); n.onclick = e => { jingle(); burst(e.clientX, e.clientY, 16); }; $('#nav-logo').replaceChildren(n); };
+  paintLogo(); onChange(paintLogo);
   $('#who').textContent = (S.profile.full_name || S.user.email) + ' — ' + ROLE_LABEL[S.profile.role];
   $('#logout').onclick = async () => { await sb.auth.signOut(); location.hash = ''; location.reload(); };
   const sel = $('#edition');
   const fill = () => {
     sel.textContent = '';
-    for (const e of S.editions) sel.append(h('option', { value: e.id, selected: e.id === S.edition?.id }, e.name + (e.archived ? ' (أرشيف)' : '')));
+    const act = S.editions.filter(e => isActive(e) || e.id === S.edition?.id).sort((a, b) => a.start_date.localeCompare(b.start_date));
+    const old = S.editions.filter(e => !act.includes(e));
+    const opt = e => h('option', { value: e.id, selected: e.id === S.edition?.id }, `${(THEMES[e.event_type] || THEMES.christmas).icon} ${e.name}${e.archived ? ' (أرشيف)' : ''}`);
+    sel.append(...act.map(opt));
+    if (old.length) sel.append(h('optgroup', { label: 'مشاريع منتهية' }, old.map(opt)));
   };
   fill();
   sel.onchange = () => switchEdition(sel.value);
+  if (can.admin()) { const nb = h('button', { class: 'btn small primary np-btn', type: 'button', title: 'مشروع جديد' }, '＋ مشروع جديد'); nb.onclick = openNewProject; sel.after(nb); }
   onChange(fill);
   const ab = $('#assist');
   const showAssist = () => { ab.hidden = !assistantReady(); };
   ab.onclick = openAssistant;
   showAssist(); onChange(showAssist);
   window.addEventListener('bcm:settings', showAssist);
+  try { const w = sessionStorage.getItem('bcm.welcome'); if (w) { sessionStorage.removeItem('bcm.welcome'); setTimeout(() => { toast(`✨ تم إنشاء «${w}». أضف الآن الأكشاك أو الطاولات على الخريطة من «تحرير الخريطة».`, { timeout: 9000, actions: [{ label: 'افتح الخريطة', main: true, run: () => { location.hash = '#/map'; } }] }); burst(innerWidth / 2, innerHeight / 3, 40); }, 700); } } catch {}
 }
 
 function render(full) {
@@ -113,7 +128,7 @@ function render(full) {
   const r = (key === 'pnl' && !can.pnl() ? null : ROUTES[key]) || ROUTES[''];
   $$('.nav a').forEach(a => a.setAttribute('aria-current', a.getAttribute('href') === '#/' + key ? 'page' : 'false'));
   $('#page-title').textContent = r.title;
-  document.title = r.title + ' — Basra Christmas Market';
+  document.title = r.title + ' — ' + (S.edition?.name || '');
   if (!S.edition) { view().replaceChildren(noEdition()); return; }
   // the map keeps its own state across live refreshes
   if (!full && view()._refresh) { view()._refresh(); return; }
@@ -123,8 +138,8 @@ function render(full) {
 }
 
 function noEdition() {
-  return h('div', { class: 'empty' }, h('strong', {}, 'لا توجد نسخة مهرجان بعد'),
-    'شغّل ملف seed.sql من دليل التشغيل لإضافة نسخة 2026 والأكشاك، أو أنشئ نسخة من الإعدادات.');
+  return h('div', { class: 'empty' }, h('strong', {}, 'لا يوجد مشروع بعد'),
+    'أنشئ أول مشروع (حفل، مباراة، مهرجان…) وارفع خريطته.', can.admin() ? h('button', { class: 'btn primary', onclick: openNewProject }, '✨ مشروع جديد') : null);
 }
 
 // ================= dashboard =================
@@ -183,12 +198,12 @@ function pageDashboard(root) {
   const pct = s.kiosks ? Math.round(100 * (s.reserved + s.partial) / s.kiosks) : 0;
   const banner = h('section', { class: 'hero' },
     h('div', { class: 'hero-main' },
-      h('img', { class: 'hero-logo', src: 'img/logo-dark.svg', alt: 'Market Christmas' }),
-      h('h1', {}, E.name),
-      h('p', {}, `${fmtDateLong(E.start_date)} — ${fmtDateLong(E.end_date)} · ${daysBetween(E.start_date, E.end_date)} يوماً`)),
+      logoNode(E, 'hero'),
+      E.logo_url || (E.event_type || 'christmas') === 'christmas' ? h('h1', {}, E.name) : null,
+      h('p', {}, projectWhen(E), E.venue ? ` · 📍 ${E.venue}` : '')),
     tree(104),
     h('div', { class: 'hero-side' },
-      countdown(E.start_date, E.end_date),
+      countdown(E.start_date, E.end_date, E.event_time),
       h('div', { class: 'occ-row' },
         h('div', { class: 'occ-ring', style: { '--p': pct } }, h('b', { class: 'num' }, s.kiosks ? pct + '%' : '—')),
         h('span', {}, 'من الأكشاك عليها حجز'))));
@@ -200,6 +215,11 @@ function pageDashboard(root) {
     cfgs.reminders ? remindersPanel(s, cfgs) : null,
     cfgs.show_analytics ? analyticsPanel(s) : null,
   ].filter(Boolean));
+}
+
+export function projectWhen(E) {
+  const one = E.start_date === E.end_date;
+  return (one ? fmtDateLong(E.start_date) : `${fmtDateLong(E.start_date)} — ${fmtDateLong(E.end_date)} · ${daysBetween(E.start_date, E.end_date)} يوماً`) + (E.event_time ? ` · الساعة ${E.event_time}` : '');
 }
 
 function customizeCards() {
@@ -400,6 +420,10 @@ function pageMap(root) {
     const prefix = c => (/^[A-Za-z]+/.exec(c) || [''])[0].toUpperCase();
     const grp = h('input', { class: 'in', dir: 'ltr', value: k.grp || '' });
     const note = h('p', { class: 'hint', style: { margin: 0 } });
+    const cap = h('input', { class: 'in', type: 'number', min: 1, value: k.capacity || '', placeholder: S.edition?.unit_kind === 'table' ? 'مثال: 6' : 'اختياري' });
+    const lp = h('input', { class: 'in', inputmode: 'decimal', value: k.list_price == null ? '' : fmtNum(k.list_price), placeholder: 'اختياري' });
+    const cat = h('input', { class: 'in', value: k.category || '', placeholder: 'مثال: VIP، عائلي، أمامي' });
+    const shp = h('select', { class: 'in' }, [['rect', '▭ مستطيل / مربع'], ['ellipse', '◯ دائري']].map(([v, l]) => h('option', { value: v, selected: (k.shape === 'ellipse' ? 'ellipse' : 'rect') === v }, l)));
     const live = S.reservations.filter(r => r.status !== 'cancelled' && r.kiosk_ids.includes(k.id));
     inp.oninput = () => {
       const c = inp.value.trim().toUpperCase().replace(/\s+/g, '');
@@ -408,9 +432,10 @@ function pageMap(root) {
       note.textContent = other ? `الرقم ${c} مستخدم لكشك آخر. اختر رقماً غيره، أو استخدم «تبديل كشكين» إن أردت تبادل المكانين.` : '';
       note.style.color = other ? 'var(--bad)' : '';
     };
-    const ok = h('button', { class: 'btn primary' }, 'حفظ الرقم الجديد');
-    const md = modal({ title: 'تغيير رقم الكشك ' + k.code, body: [
-      h('div', { class: 'grid2' }, field('الرقم الجديد', inp), field('المجموعة', grp)), note,
+    const ok = h('button', { class: 'btn primary' }, 'حفظ');
+    const md = modal({ title: 'تعديل الكشك ' + k.code, body: [
+      h('div', { class: 'grid2' }, field('الرقم', inp), field('المجموعة', grp)), note,
+      h('div', { class: 'grid2' }, field('عدد الأشخاص (السعة)', cap), field('السعر الاسترشادي', lp), field('الفئة', cat), field('الشكل', shp)),
       live.length ? h('p', { class: 'warnbox' }, `على هذا الكشك ${live.length} حجز (${live.map(r => r.customer_name || 'حجز مؤقت').join('، ')}). الحجوزات والدفعات تبقى كما هي وتظهر بالرقم الجديد. العقود المطبوعة سابقاً تبقى بالرقم القديم.`) : null,
       h('p', { class: 'hint', style: { margin: 0 } }, 'يتغير الرقم على الخريطة وفي الحجوزات والتقارير وصفحة الزوار فوراً.')],
       footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')] });
@@ -419,14 +444,18 @@ function pageMap(root) {
     ok.onclick = async () => {
       const c = inp.value.trim().toUpperCase().replace(/\s+/g, '');
       if (!c) return toast('اكتب رقم الكشك', { error: true });
-      if (c === k.code && (grp.value.trim() || null) === (k.grp || null)) return md.close();
       if (c !== k.code && kioskByCode(c)) return toast('الرقم ' + c + ' مستخدم لكشك آخر', { error: true });
+      const price = lp.value.trim() ? parseAmount(lp.value) : null;
+      if (Number.isNaN(price)) return toast('السعر غير صالح', { error: true });
+      const capacity = cap.value ? Math.max(1, Math.round(+cap.value)) : null;
       ok.disabled = true;
       const old = k.code;
-      const { error } = await sb.from('kiosks').update({ code: c, grp: grp.value.trim().toUpperCase() || null, needs_verify: false }).eq('id', k.id);
+      const { error } = await sb.from('kiosks').update({ code: c, grp: grp.value.trim().toUpperCase() || null, needs_verify: false,
+        capacity, list_price: price, category: cat.value.trim() || null, shape: shp.value }).eq('id', k.id);
       ok.disabled = false;
       if (error) return toast(/duplicate|unique/i.test(error.message) ? 'الرقم ' + c + ' مستخدم لكشك آخر' : errText(error), { error: true });
       md.close(); await refresh();
+      if (old === c) { toast('تم حفظ الكشك ' + c); return; }
       toast(`تم تغيير رقم الكشك من ${old} إلى ${c}`, { actions: [{ label: 'تراجع', run: async () => {
         const { error: e2 } = await sb.from('kiosks').update({ code: old, grp: k.grp }).eq('id', k.id);
         if (e2) return toast(errText(e2), { error: true }); await refresh(); toast('أُعيد الرقم ' + old);
@@ -500,13 +529,22 @@ function pageMap(root) {
       category: h('input', { class: 'in', value: near?.category || '' }),
       size: h('select', { class: 'in' }, S.kiosks.filter(k => k.grp !== 'AR').sort((a, b) => codeSort(a.code, b.code)).map(k => h('option', { value: k.id, selected: k.id === near?.id }, 'مثل ' + k.code))),
       price: h('input', { class: 'in', inputmode: 'decimal', value: near?.list_price == null ? '' : fmtNum(near.list_price), placeholder: 'اختياري' }),
+      cap: h('input', { class: 'in', type: 'number', min: 1, value: near?.capacity || (E.unit_kind === 'table' ? 4 : ''), placeholder: 'اختياري' }),
+      shape: h('select', { class: 'in' }, [['rect', '▭ مستطيل / مربع'], ['ellipse', '◯ دائري']].map(([v, l]) => h('option', { value: v, selected: v === (near ? (near.shape === 'ellipse' ? 'ellipse' : 'rect') : (E.unit_kind === 'table' ? 'ellipse' : 'rect')) }, l))),
+      count: h('input', { class: 'in', type: 'number', min: 1, max: 200, value: 1 }),
+      cols: h('input', { class: 'in', type: 'number', min: 1, max: 50, value: 5 }),
+      gap: h('input', { class: 'in', type: 'number', min: 0, max: 400, value: 20 }),
     };
+    if (!S.kiosks.length) I.size.append(h('option', { value: '', selected: true }, 'الحجم الافتراضي'));
+    const bulk = h('div', { class: 'grid3' }, field('عدد في الصف', I.cols), field('المسافة بينها (بكسل)', I.gap));
+    bulk.hidden = true; I.count.oninput = () => { bulk.hidden = +I.count.value <= 1; };
     I.grp.oninput = () => { const g = I.grp.value.trim().toUpperCase(); if (g) I.code.value = nextCode(g); };
     const ok = h('button', { class: 'btn primary' }, 'إضافة الكشك');
     const md = modal({ title: 'كشك جديد', body: [
       h('p', { class: 'hint', style: { margin: 0 } }, 'سيظهر الكشك في المكان الذي ضغطت عليه. يمكنك تحريكه أو تغيير حجمه لاحقاً من «تحرير الخريطة».'),
-      h('div', { class: 'grid2' }, field('رقم الكشك', I.code), field('المجموعة', I.grp), field('الفئة (اختياري)', I.category), field('الحجم والاتجاه', I.size)),
-      field('السعر الاسترشادي (اختياري)', I.price)],
+      h('div', { class: 'grid2' }, field('رقم الكشك (الأول)', I.code), field('المجموعة', I.grp), field('الفئة (اختياري)', I.category), field('الحجم والاتجاه', I.size)),
+      h('div', { class: 'grid3' }, field('السعر الاسترشادي (اختياري)', I.price), field('عدد الأشخاص لكل واحد', I.cap), field('الشكل', I.shape)),
+      field('كم كشكاً تريد إضافته؟', I.count, h('span', { class: 'hint' }, 'لإضافة صف أو مجموعة كاملة دفعة واحدة بأرقام متتالية تبدأ من الرقم الأول.')), bulk],
       footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')] });
     ok.onclick = async () => {
       const code = I.code.value.trim().toUpperCase().replace(/\s+/g, '');
@@ -515,16 +553,25 @@ function pageMap(root) {
       const lp = I.price.value.trim() ? parseAmount(I.price.value) : null;
       if (Number.isNaN(lp)) return toast('السعر غير صالح', { error: true });
       const ref = kioskById(I.size.value);
-      const geom = ref ? { ...ref.geom, cx, cy } : { cx, cy, w: 36 / E.map_w, h: 28 / E.map_h, rot: 0 };
+      const big = E.unit_kind === 'table' ? 70 : 36;
+      const g1 = ref ? { ...ref.geom, cx, cy } : { cx, cy, w: big / E.map_w, h: (E.unit_kind === 'table' ? 70 : 28) / E.map_h, rot: 0 };
+      const n = Math.min(200, Math.max(1, Math.round(+I.count.value || 1))), cols = Math.max(1, Math.round(+I.cols.value || 1)), gp = Math.max(0, +I.gap.value || 0);
+      const m = /^(.*?)(\d+)$/.exec(code), pre = m ? m[1] : code, start = m ? +m[2] : 1, pad = m ? m[2].length : 0;
+      const codes = n === 1 ? [code] : Array.from({ length: n }, (_, i) => pre + String(start + i).padStart(pad, '0'));
+      const taken = codes.filter(c => kioskByCode(c));
+      if (taken.length) return toast('أرقام مستخدمة: ' + taken.join('، '), { error: true });
+      const cap = I.cap.value ? Math.max(1, Math.round(+I.cap.value)) : null;
+      const rows = codes.map((c, i) => ({ edition_id: E.id, code: c, grp: I.grp.value.trim().toUpperCase() || null, category: I.category.value.trim() || null,
+        geom: { ...g1, cx: Math.min(.99, g1.cx + (i % cols) * (g1.w + gp / E.map_w)), cy: Math.min(.99, g1.cy + Math.floor(i / cols) * (g1.h + gp / E.map_h)) },
+        shape: I.shape.value, list_price: lp, capacity: cap }));
       ok.disabled = true;
-      const { data, error } = await sb.from('kiosks').insert({ edition_id: E.id, code, grp: I.grp.value.trim().toUpperCase() || null, category: I.category.value.trim() || null,
-        geom, shape: ref?.shape === 'ellipse' ? 'ellipse' : 'rect', list_price: lp }).select().single();
+      const { data, error } = await sb.from('kiosks').insert(rows).select();
       ok.disabled = false;
       if (error) return toast(/duplicate|unique/i.test(error.message) ? 'يوجد كشك بنفس الرقم' : errText(error), { error: true });
       md.close(); setTool('');
       await refresh();
-      selected = [data.id]; mv.setSelected(selected); drawPanel();
-      toast('تمت إضافة الكشك ' + code, { actions: [{ label: 'إضافة كشك آخر', main: true, run: () => setTool('add') }] });
+      selected = data.map(d => d.id); mv.setSelected(selected); drawPanel();
+      toast(n === 1 ? 'تمت إضافة الكشك ' + code : `تمت إضافة ${n} أكشاك (${codes[0]} – ${codes[n - 1]})`, { actions: [{ label: 'إضافة كشك آخر', main: true, run: () => setTool('add') }] });
     };
   }
   async function removeKiosk(k) {
@@ -655,7 +702,7 @@ function pageMap(root) {
       h('div', { class: 'kh' },
         h('h2', { class: 'kufi code' }, k.code),
         h('span', { class: 'status-pill', style: { background: statusBg(s, colors()) } }, STATUS_LABEL[s])),
-      h('div', { class: 'hint' }, [k.grp && 'مجموعة ' + k.grp, k.category, k.zone].filter(Boolean).join(' · '),
+      h('div', { class: 'hint' }, [k.grp && 'مجموعة ' + k.grp, k.category, k.zone, k.capacity && '👥 ' + k.capacity + ' أشخاص'].filter(Boolean).join(' · '),
         k.list_price != null ? h('div', {}, 'السعر الاسترشادي: ', h('span', { class: 'num' }, money(k.list_price))) : null),
       k.needs_verify ? h('p', { class: 'warnbox' }, 'رقم هذا الكشك بحاجة لتأكيد. ', k.note || '') : null,
       bookable && can.book() ? h('button', { class: 'btn primary', onclick: () => openBooking({
@@ -664,7 +711,7 @@ function pageMap(root) {
         to: firstGap.e < to ? firstGap.e : to >= firstGap.s && to <= firstGap.e ? to : firstGap.e,
       }) }, 'حجز هذا الكشك') : null,
       can.book() ? h('button', { class: 'btn', onclick: () => startSwap(k) }, '⇄ تبديل مع كشك آخر') : null,
-      can.admin() ? h('button', { class: 'btn', onclick: () => renameKiosk(k) }, '✎ تغيير رقم الكشك') : null,
+      can.admin() ? h('button', { class: 'btn', onclick: () => renameKiosk(k) }, '✎ تعديل الكشك (الرقم، السعة، السعر)') : null,
       s === 'partial' ? h('p', { class: 'hint', style: { margin: 0 } }, 'محجوز لجزء من الفترة المعروضة فقط، وباقي الأيام متاحة للحجز.') : null,
       gaps.length && live.length ? h('div', { class: 'hint' }, 'أيام متوفرة: ', gaps.map(g => g.s === g.e ? fmtDate(g.s) : `${fmtDate(g.s)}–${fmtDate(g.e)}`).join('، ')) : null,
       !k.active || !k.rentable ? h('div', { class: 'warnbox disabled-box' },

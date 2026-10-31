@@ -6,6 +6,8 @@ import {
 import { S, can, refresh, settings, colors, kioskById, codeSort, loadEditions, switchEdition, DEFAULT_CONTRACT, DEFAULT_SPONSOR_CONTRACT } from './state.js';
 import { openBooking, openReservation, openPayment, openCustomer, field, DEAL_LABEL } from './booking.js';
 import { listModels, pickModel } from './assistant.js';
+import { projectFields, projectsSection, openNewProject, GENERIC_CONTRACT } from './projects.js';
+import { unitOf } from './state.js';
 
 const numCell = (v, unknown = '—') => h('td', { class: 'money' }, v == null ? h('span', { class: 'hint' }, unknown) : h('span', { class: 'num' }, fmtNum(v)));
 
@@ -408,6 +410,7 @@ export function pageSettings(root) {
     : (E.contact_phone || E.contact_whatsapp) ? [{ name: '', phone: E.contact_whatsapp || E.contact_phone }] : [];
   initialContacts.forEach(c => addContact(c.name, c.phone));
   if (!initialContacts.length) addContact();
+  const PF = projectFields(E, dis);
   const pub = h('input', { type: 'checkbox', checked: E.public_enabled, disabled: dis });
   const arch = h('input', { type: 'checkbox', checked: E.archived, disabled: dis });
   const publicUrl = () => new URL('public.html?e=' + encodeURIComponent(E.slug), location.href).href;
@@ -431,7 +434,10 @@ export function pageSettings(root) {
     if (!/^[a-z0-9-]+$/.test(patch.slug)) return toast('الرابط المختصر: أحرف إنجليزية صغيرة وأرقام وشرطة فقط', { error: true });
     if (patch.end_date < patch.start_date) return toast('تاريخ النهاية قبل البداية', { error: true });
     patch.public_enabled = pub.checked; patch.archived = arch.checked;
-    await saveEdition(patch, 'تم حفظ بيانات النسخة');
+    const pp = PF.patch(), reload = pp.event_type !== E.event_type || pp.unit_kind !== E.unit_kind || pp.logo_url !== E.logo_url;
+    Object.assign(patch, pp);
+    await saveEdition(patch, 'تم حفظ بيانات المشروع');
+    if (reload) setTimeout(() => location.reload(), 600);
   } }, 'حفظ') : null;
 
   // --- colors ---
@@ -450,7 +456,7 @@ export function pageSettings(root) {
     advanced: h('input', { type: 'checkbox', checked: cfg.advanced_reports, disabled: dis }),
     contract: h('select', { class: 'in', disabled: dis, style: { maxWidth: '320px' } }, [['ask', 'اسأل في كل مرة'], ['always', 'افتح العقد تلقائياً بعد الحفظ'], ['never', 'لا تسأل (أنشئ العقد من الحجز عند الحاجة)']].map(([v, l]) => h('option', { value: v, selected: cfg.contract_prompt === v }, l))),
   };
-  const tpl = h('textarea', { class: 'in', style: { minHeight: '320px', fontSize: '14px', lineHeight: 1.8 }, disabled: dis }, cfg.contract_template || DEFAULT_CONTRACT);
+  const tpl = h('textarea', { class: 'in', style: { minHeight: '320px', fontSize: '14px', lineHeight: 1.8 }, disabled: dis }, cfg.contract_template || (E.unit_kind && E.unit_kind !== 'kiosk' ? GENERIC_CONTRACT : DEFAULT_CONTRACT));
   const stpl = h('textarea', { class: 'in', style: { minHeight: '320px', fontSize: '14px', lineHeight: 1.8 }, disabled: dis }, cfg.sponsor_template || DEFAULT_SPONSOR_CONTRACT);
   const logoUrl = h('input', { class: 'in', dir: 'ltr', value: cfg.logo_url || '', disabled: dis, placeholder: 'https://…' });
   const logoFile = h('input', { type: 'file', accept: 'image/*', disabled: dis });
@@ -483,18 +489,20 @@ export function pageSettings(root) {
   }
 
   const children = [
-    sec('بيانات النسخة',
-      h('div', { class: 'grid2' }, field('اسم النسخة', I.name), field('الرابط المختصر (للصفحة العامة)', I.slug),
-        field('تاريخ الافتتاح', I.start_date), field('تاريخ الختام', I.end_date)),
+    projectsSection(sec),
+    sec('بيانات المشروع',
+      h('div', { class: 'grid2' }, field('اسم المشروع', I.name), field('الرابط المختصر (للصفحة العامة)', I.slug),
+        field('تاريخ البداية', I.start_date), field('تاريخ النهاية (نفس اليوم إن كانت ليوم واحد)', I.end_date)),
+      PF.node,
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
         h('strong', { style: { fontSize: '14px' } }, 'أرقام الاستفسار في الصفحة العامة'),
-        h('span', { class: 'hint' }, 'يظهر لكل شخص زر اتصال وزر واتساب عند الضغط على كشك متوفر.'),
+        h('span', { class: 'hint' }, 'يظهر لكل شخص زر اتصال وزر واتساب عند الضغط على ' + unitOf(E).one + ' متوفر.'),
         contactList,
         dis ? null : h('button', { type: 'button', class: 'btn small', style: { alignSelf: 'flex-start' }, onclick: () => addContact() }, 'إضافة رقم')),
       h('label', { class: 'check' }, pub, 'الصفحة العامة مفعّلة'),
-      h('label', { class: 'check' }, arch, 'نسخة مؤرشفة (منتهية)'),
+      h('label', { class: 'check' }, arch, 'مشروع مؤرشف (منتهٍ)'),
       saveInfo ? h('div', {}, saveInfo) : null),
-    sec('رابط خريطة الأكشاك العامة', h('p', { class: 'hint', style: { margin: 0 } }, 'شاركه على واتساب وفيسبوك وإنستغرام. يعرض الأكشاك المتوفرة والمحجوزة فقط، بدون أسماء أو أرقام أو مبالغ.'), linkBox),
+    sec('رابط الخريطة العامة للزبائن', h('p', { class: 'hint', style: { margin: 0 } }, 'شاركه على واتساب وفيسبوك وإنستغرام. يعرض الأكشاك المتوفرة والمحجوزة فقط، بدون أسماء أو أرقام أو مبالغ.'), linkBox),
     sec('ألوان الحالات على الخريطة', colorRow),
     sec('الميزات الاختيارية',
       h('label', { class: 'check' }, F.reminders, 'تنبيهات الدفعات المستحقة في الرئيسية'),
@@ -506,7 +514,7 @@ export function pageSettings(root) {
       h('label', { class: 'check' }, F.advanced, 'التقارير المتقدمة (الحجوزات حسب الفترة، مقارنة النسخ)'),
       field('بعد حفظ الحجز — عقد الإيجار', F.contract),
       h('div', { class: 'grid2' }, field('رابط شعار الشركة (يظهر في العقد)', logoUrl), field('أو ارفع صورة الشعار', logoFile)),
-      field('نص عقد إيجار الكشك', tpl, h('span', { class: 'hint' }, 'الحقول التي تُملأ تلقائياً: {festival} {festival_start} {festival_end} {customer} {company_line} {contact} {phone} {email} {kiosks} {start} {end} {days} {daily} {total} {paid} {remaining} {deadline} {today} {notes}')),
+      field('نص عقد الحجز', tpl, h('span', { class: 'hint' }, 'الحقول التي تُملأ تلقائياً: {festival} {festival_start} {festival_end} {customer} {company_line} {contact} {phone} {email} {kiosks} {start} {end} {days} {daily} {guests} {unit} {total} {paid} {remaining} {deadline} {today} {notes}')),
       field('نص عقد الرعاية', stpl),
       admin ? h('div', { style: { display: 'flex', gap: '8px' } }, saveFeatures, h('button', { class: 'btn ghost', onclick: () => { tpl.value = DEFAULT_CONTRACT; stpl.value = DEFAULT_SPONSOR_CONTRACT; } }, 'استعادة نصوص العقود الافتراضية')) : null),
   ];
@@ -545,7 +553,7 @@ function cloneSection(sec) {
     await switchEdition(data);
     toast('تم إنشاء النسخة الجديدة والانتقال إليها');
   };
-  return sec('إنشاء نسخة جديدة من المهرجان',
+  return sec('نسخة جديدة من نفس المشروع (للسنة القادمة)',
     h('p', { class: 'hint', style: { margin: 0 } }, 'لنسخة السنة القادمة. اختر ما يُنسخ من النسخة الحالية «' + E.name + '».'),
     h('div', { class: 'grid2' }, field('الاسم', I.name), field('الرابط المختصر', I.slug), field('الافتتاح', I.start), field('الختام', I.end)),
     h('div', { class: 'grid2' }, Object.entries(C).map(([k, [l]]) => h('label', { class: 'check' }, boxes[k], l))),
