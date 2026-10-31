@@ -41,3 +41,7 @@ tr.pl-pre td:first-child::after { content: " · تحضير"; color: var(--ink-3)
 .pl-mix-r .p { color: var(--ink-3); text-align: end; font-size: 12px; }
 .pl-kindseg { flex-wrap: wrap; }
 .pl-kindseg button { flex: 1 1 auto; }
+
+.pl-date { font-size: 22px; font-weight: 700; min-height: 54px; text-align: center; }
+.pl-date-label { font-family: var(--display); font-size: 20px; color: var(--pine); text-align: center; }
+.pl-date-label .hint { font-family: var(--font); font-size: 13px; }

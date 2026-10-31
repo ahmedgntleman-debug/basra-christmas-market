@@ -3,6 +3,7 @@
 import { sb, h, $, toast, errText, money, fmtNum, fmtDate, fmtDateLong, fmtDateTime, todayISO, addDays, daysBetween, parseAmount, modal, confirmBox, esc } from './common.js';
 import { S, can, refresh } from './state.js';
 import { field } from './booking.js';
+import { openDailyEntry } from './pages.js';
 
 export const KIND = {
   daily_income: { label: 'إيراد يومي', group: 'rev', cats: ['تذاكر الدخول', 'الألعاب', 'مواقف السيارات', 'حصة المبيعات', 'الفعاليات والعروض', 'التصوير', 'أخرى'] },
@@ -195,14 +196,15 @@ export function pagePnl(root) {
   perSel.onchange = () => { period = perSel.value; sessionStorage.setItem('bcm.plperiod', period); range.hidden = period !== 'custom'; draw(); };
   fromI.onchange = toI.onchange = () => draw();
   range.hidden = period !== 'custom';
-  const add = (kind, label) => can.ledger() ? h('button', { class: 'btn' + (kind === 'daily_income' ? ' primary' : ''), onclick: () => openEntry({ kind }) }, label) : null;
+  const add = (kind, label) => can.ledger() ? h('button', { class: 'btn' + (kind === 'daily_income' ? ' primary' : ''), onclick: () => pickDate(KIND[kind].label, day => openEntry({ kind, day })) }, label) : null;
+  const visBtn = can.daily() ? h('button', { class: 'btn', onclick: () => pickDate('عدد الزوار', day => openDailyEntry(day)) }, '＋ عدد الزوار') : null;
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
   const body = h('div', { class: 'rbody' });
   const drawTabs = () => tabs.replaceChildren(...[['report', 'قائمة الأرباح والخسائر'], ['entries', 'قيود الإيرادات والمصاريف']].map(([k, l]) =>
     h('button', { role: 'tab', 'aria-selected': k === tab, onclick: () => { tab = k; sessionStorage.setItem('bcm.pltab', k); drawTabs(); draw(); } }, l)));
   const bar = h('div', { class: 'pagebar pl-bar' },
     h('div', { class: 'filters' }, perSel, range, basisSeg),
-    h('div', { class: 'quick' }, add('daily_income', '＋ إيراد يومي'), add('daily_expense', '＋ مصروف يومي'), add('operating_expense', '＋ مصروف تشغيلي'), add('other_income', '＋ إيراد آخر'),
+    h('div', { class: 'quick' }, add('daily_income', '＋ إيراد يومي'), visBtn, add('daily_expense', '＋ مصروف يومي'), add('operating_expense', '＋ مصروف تشغيلي'), add('other_income', '＋ إيراد آخر'),
       can.ledger() ? h('button', { class: 'btn ghost', onclick: openImport }, 'استيراد من Excel') : null));
   function draw() {
     const P = computePnl({ ...getRange(), basis });
@@ -318,7 +320,7 @@ export function openEntry(e = {}) {
   const E = S.edition, isNew = !e.id;
   let kind = e.kind || 'daily_income';
   const today = todayISO();
-  const date = h('input', { class: 'in', type: 'date', value: e.day || (today >= E.start_date && today <= E.end_date ? today : today < E.start_date ? today : E.end_date) });
+  const date = h('input', { class: 'in', type: 'date', value: e.day || today });
   const listId = 'cats-' + Math.random().toString(36).slice(2);
   const dl = h('datalist', { id: listId });
   const cat = h('input', { class: 'in', list: listId, value: e.category || '', placeholder: 'اختر من القائمة أو اكتب مصدراً جديداً' });
@@ -374,6 +376,31 @@ export function openEntry(e = {}) {
     m.close(); await refresh(); toast('تم حذف القيد');
   };
   setTimeout(() => amt.focus(), 50);
+}
+
+// ---------------- date step: choose the day before adding an amount or visitors ----------------
+export function pickDate(what, onPick) {
+  const E = S.edition, today = todayISO();
+  const inp = h('input', { class: 'in pl-date', type: 'date', value: today });
+  const label = h('div', { class: 'pl-date-label' });
+  const paint = () => {
+    const d = inp.value;
+    const inFest = d && d >= E.start_date && d <= E.end_date;
+    label.replaceChildren(d ? fmtDateLong(d) : '—', d ? h('span', { class: 'hint' }, d === today ? ' · اليوم' : '', inFest ? ` · اليوم ${daysBetween(E.start_date, d)} من المهرجان` : d < E.start_date ? ' · قبل الافتتاح' : ' · بعد انتهاء المهرجان') : null);
+    chips.forEach(([b, v]) => b.setAttribute('aria-pressed', v === d));
+  };
+  const chips = [['اليوم', today], ['أمس', addDays(today, -1)], ['يوم الافتتاح', E.start_date], ['آخر يوم', E.end_date]]
+    .map(([l, v]) => [h('button', { type: 'button', class: 'btn small', onclick: () => { inp.value = v; paint(); } }, l), v]);
+  inp.oninput = inp.onchange = paint;
+  const go = h('button', { class: 'btn primary' }, 'متابعة');
+  const md = modal({ title: 'اختر تاريخ ' + what, body: [
+    h('p', { class: 'hint', style: { margin: 0 } }, 'التاريخ مضبوط على اليوم، ويمكنك تغييره قبل المتابعة.'),
+    inp, label, h('div', { class: 'quick' }, chips.map(c => c[0]))],
+    footer: [go, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')] });
+  paint();
+  setTimeout(() => go.focus(), 50);
+  inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') go.click(); });
+  go.onclick = () => { if (!inp.value) return toast('اختر التاريخ', { error: true }); md.close(); onPick(inp.value); };
 }
 
 // ---------------- Excel import ----------------
