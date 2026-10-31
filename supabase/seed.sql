@@ -1,7 +1,7 @@
 -- Basra Christmas Market — first edition + the 71 kiosks traced from the official map (plan 26-67).
 -- Run once, after schema.sql. Edit dates/contacts later from the app (Settings).
 insert into public.editions (slug, name, start_date, end_date, map_url, map_w, map_h)
-values ('bcm-2026', 'Basra Christmas Market 2026', '2026-12-10', '2027-01-02', 'map-v3.jpg', 2707, 3485)
+values ('bcm-2026', 'Basra Christmas Market 2026', '2026-12-10', '2027-01-02', 'map-v4.jpg', 2707, 3485)
 on conflict (slug) do nothing;
 
 insert into public.kiosks (edition_id, code, grp, category, geom, shape)
