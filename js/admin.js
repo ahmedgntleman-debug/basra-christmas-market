@@ -11,7 +11,8 @@ import { openAssistant, assistantReady } from './assistant.js';
 import { pagePnl } from './pnl.js';
 import { applyTheme, logoNode, rememberedBrand, theme, THEMES } from './themes.js';
 import { openNewProject } from './projects.js';
-import { applyProject, unitOf, isActive } from './state.js';
+import { pageCheckin } from './checkin.js';
+import { applyProject, unitOf, isActive, zones, zoneOf, minSpendOf } from './state.js';
 import { startI18n } from './i18n.js';
 import { initFestive, garland, baubles, countdown, tree, toggleButton, soundButton, soundOn, festiveOn, burst, jingle, sleigh } from './festive.js';
 
@@ -23,6 +24,7 @@ const ROUTES = {
   customers: { title: 'العملاء', render: pageCustomers },
   reports: { title: 'التقارير', render: pageReports },
   pnl: { title: 'الأرباح والخسائر', render: pagePnl },
+  checkin: { title: 'تسجيل الدخول عند الباب', render: pageCheckin },
   settings: { title: 'الإعدادات', render: pageSettings },
 };
 let cleanup = null;
@@ -91,6 +93,7 @@ function showLogin() {
 
 function shell() {
   const pl = $('.nav a[href="#/pnl"]'); if (pl) pl.hidden = !can.pnl();
+  const ck = $('.nav a[href="#/checkin"]'); if (ck) ck.hidden = !can.pay();
   garland($('.top'));
   sleigh({ first: 9000, every: [40000, 80000], when: () => !document.querySelector('.scrim') && /^#?\/?$/.test(location.hash) });
   $('.nav .foot').prepend(toggleButton(), soundButton());
@@ -120,7 +123,7 @@ function shell() {
   ab.onclick = openAssistant;
   showAssist(); onChange(showAssist);
   window.addEventListener('bcm:settings', showAssist);
-  try { const w = sessionStorage.getItem('bcm.welcome'); if (w) { sessionStorage.removeItem('bcm.welcome'); setTimeout(() => { toast(`✨ تم إنشاء «${w}». أضف الآن الأكشاك أو الطاولات على الخريطة من «تحرير الخريطة».`, { timeout: 9000, actions: [{ label: 'افتح الخريطة', main: true, run: () => { location.hash = '#/map'; } }] }); burst(innerWidth / 2, innerHeight / 3, 40); }, 700); } } catch {}
+  try { const w = sessionStorage.getItem('bcm.welcome'); if (w) { sessionStorage.removeItem('bcm.welcome'); setTimeout(() => { toast(`✨ تم إنشاء «${w}». أضف الأكشاك أو الطاولات على الخريطة، والمشروع مخفي عن الزبائن حتى تضغط «تفعيل للزبائن» في الإعدادات ← المشاريع.`, { timeout: 9000, actions: [{ label: 'افتح الخريطة', main: true, run: () => { location.hash = '#/map'; } }] }); burst(innerWidth / 2, innerHeight / 3, 40); }, 700); } } catch {}
 }
 
 function render(full) {
@@ -360,7 +363,9 @@ function pageMap(root) {
     const c = colors(), count = s => [...st.values()].filter(x => x === s).length;
     legend.replaceChildren(...['available', 'partial', 'held', 'reserved', 'disabled'].map(s =>
       h('span', {}, h('i', { style: { background: statusBg(s, c) } }), `${STATUS_LABEL[s]} (${count(s)})`)),
-      h('span', { class: 'hint' }, `الفترة: ${fmtDate(from)} – ${fmtDate(to)}`));
+      h('span', { class: 'hint' }, `الفترة: ${fmtDate(from)} – ${fmtDate(to)}`),
+      ...zones().filter(z => z.color).map(z => h('span', { class: 'zone-key' }, h('i', { style: { borderColor: z.color } }), z.name,
+        z.price ? h('small', {}, ' ' + money(z.price)) : null, z.min_spend ? h('small', {}, ' · حد أدنى ' + money(z.min_spend)) : null)));
   }
   function applyFilter() {
     const q = query.trim().toLowerCase();
@@ -374,6 +379,7 @@ function pageMap(root) {
   }
   function upd() {
     const st = statuses();
+    mv.setZones(zones());
     mv.setKiosks(S.kiosks);
     mv.setStatuses(st);
     mv.setColors(colors());
@@ -422,7 +428,8 @@ function pageMap(root) {
     const note = h('p', { class: 'hint', style: { margin: 0 } });
     const cap = h('input', { class: 'in', type: 'number', min: 1, value: k.capacity || '', placeholder: S.edition?.unit_kind === 'table' ? 'مثال: 6' : 'اختياري' });
     const lp = h('input', { class: 'in', inputmode: 'decimal', value: k.list_price == null ? '' : fmtNum(k.list_price), placeholder: 'اختياري' });
-    const cat = h('input', { class: 'in', value: k.category || '', placeholder: 'مثال: VIP، عائلي، أمامي' });
+    const cat = zoneInput(k.category);
+    const ms = h('input', { class: 'in', inputmode: 'decimal', value: k.min_spend == null ? '' : fmtNum(k.min_spend), placeholder: zoneOf(k)?.min_spend ? 'من المنطقة: ' + fmtNum(zoneOf(k).min_spend) : 'اختياري' });
     const shp = h('select', { class: 'in' }, [['rect', '▭ مستطيل / مربع'], ['ellipse', '◯ دائري']].map(([v, l]) => h('option', { value: v, selected: (k.shape === 'ellipse' ? 'ellipse' : 'rect') === v }, l)));
     const live = S.reservations.filter(r => r.status !== 'cancelled' && r.kiosk_ids.includes(k.id));
     inp.oninput = () => {
@@ -435,7 +442,7 @@ function pageMap(root) {
     const ok = h('button', { class: 'btn primary' }, 'حفظ');
     const md = modal({ title: 'تعديل الكشك ' + k.code, body: [
       h('div', { class: 'grid2' }, field('الرقم', inp), field('المجموعة', grp)), note,
-      h('div', { class: 'grid2' }, field('عدد الأشخاص (السعة)', cap), field('السعر الاسترشادي', lp), field('الفئة', cat), field('الشكل', shp)),
+      h('div', { class: 'grid2' }, field('عدد الأشخاص (السعة)', cap), field('السعر الاسترشادي', lp), field('المنطقة / الفئة', cat), field('الشكل', shp), field('الحد الأدنى للطلب (د.ع)', ms)),
       live.length ? h('p', { class: 'warnbox' }, `على هذا الكشك ${live.length} حجز (${live.map(r => r.customer_name || 'حجز مؤقت').join('، ')}). الحجوزات والدفعات تبقى كما هي وتظهر بالرقم الجديد. العقود المطبوعة سابقاً تبقى بالرقم القديم.`) : null,
       h('p', { class: 'hint', style: { margin: 0 } }, 'يتغير الرقم على الخريطة وفي الحجوزات والتقارير وصفحة الزوار فوراً.')],
       footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')] });
@@ -448,10 +455,12 @@ function pageMap(root) {
       const price = lp.value.trim() ? parseAmount(lp.value) : null;
       if (Number.isNaN(price)) return toast('السعر غير صالح', { error: true });
       const capacity = cap.value ? Math.max(1, Math.round(+cap.value)) : null;
+      const min_spend = ms.value.trim() ? parseAmount(ms.value) : null;
+      if (Number.isNaN(min_spend)) return toast('الحد الأدنى للطلب غير صالح', { error: true });
       ok.disabled = true;
       const old = k.code;
       const { error } = await sb.from('kiosks').update({ code: c, grp: grp.value.trim().toUpperCase() || null, needs_verify: false,
-        capacity, list_price: price, category: cat.value.trim() || null, shape: shp.value }).eq('id', k.id);
+        capacity, list_price: price, category: cat.value.trim() || null, shape: shp.value, min_spend }).eq('id', k.id);
       ok.disabled = false;
       if (error) return toast(/duplicate|unique/i.test(error.message) ? 'الرقم ' + c + ' مستخدم لكشك آخر' : errText(error), { error: true });
       md.close(); await refresh();
@@ -520,13 +529,33 @@ function pageMap(root) {
     const nums = S.kiosks.filter(k => k.grp === g && new RegExp('^' + g + '\\d+$').test(k.code)).map(k => +k.code.slice(g.length));
     return g + ((nums.length ? Math.max(...nums) : 0) + 1);
   }
+  // give several selected kiosks/tables the same zone, capacity or minimum spend
+  function bulkZone(ks) {
+    const z = zoneInput('');
+    const cap = h('input', { class: 'in', type: 'number', min: 1, placeholder: 'السعة' });
+    const ms = h('input', { class: 'in', inputmode: 'decimal', placeholder: 'حد أدنى للطلب' });
+    const go = h('button', { class: 'btn small pine' }, 'تطبيق على المحدد');
+    go.onclick = async () => {
+      const patch = {};
+      if (z.value.trim()) patch.category = z.value.trim();
+      if (cap.value) patch.capacity = Math.max(1, Math.round(+cap.value));
+      if (ms.value.trim()) { const v = parseAmount(ms.value); if (Number.isNaN(v)) return toast('المبلغ غير صالح', { error: true }); patch.min_spend = v; }
+      if (!Object.keys(patch).length) return toast('اختر منطقة أو اكتب السعة أو الحد الأدنى', { error: true });
+      go.disabled = true;
+      const { error } = await sb.from('kiosks').update(patch).in('id', ks.map(k => k.id));
+      go.disabled = false;
+      if (error) return toast(errText(error), { error: true });
+      await refresh(); toast(`تم تحديث ${ks.length} أكشاك`);
+    };
+    return h('div', { class: 'bulk-zone' }, h('strong', {}, 'تعديل جماعي'), h('div', { class: 'grid3' }, z, cap, ms), go);
+  }
   function openAddKiosk(cx, cy) {
     const near = nearest(cx, cy);
     const g0 = near?.grp || 'A';
     const I = {
       code: h('input', { class: 'in', value: nextCode(g0), dir: 'ltr' }),
       grp: h('input', { class: 'in', value: g0, dir: 'ltr' }),
-      category: h('input', { class: 'in', value: near?.category || '' }),
+      category: zoneInput(near?.category || ''),
       size: h('select', { class: 'in' }, S.kiosks.filter(k => k.grp !== 'AR').sort((a, b) => codeSort(a.code, b.code)).map(k => h('option', { value: k.id, selected: k.id === near?.id }, 'مثل ' + k.code))),
       price: h('input', { class: 'in', inputmode: 'decimal', value: near?.list_price == null ? '' : fmtNum(near.list_price), placeholder: 'اختياري' }),
       cap: h('input', { class: 'in', type: 'number', min: 1, value: near?.capacity || (E.unit_kind === 'table' ? 4 : ''), placeholder: 'اختياري' }),
@@ -687,6 +716,7 @@ function pageMap(root) {
         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } }, ks.map(k => h('span', { class: 'chip' }, k.code))),
         busy.length ? h('p', { class: 'hint', style: { color: 'var(--bad)' } }, 'عليها حجوزات في الفترة المختارة: ' + busy.map(k => k.code).join('، ')) : null,
         can.book() ? h('button', { class: 'btn primary', onclick: () => openBooking({ kioskIds: selected, from, to }) }, 'حجز الأكشاك المحددة') : null,
+        can.admin() ? bulkZone(ks) : null,
         h('button', { class: 'btn ghost', onclick: () => { selected = []; mv.setSelected([]); drawPanel(); } }, 'إلغاء التحديد')));
       return;
     }
@@ -702,7 +732,7 @@ function pageMap(root) {
       h('div', { class: 'kh' },
         h('h2', { class: 'kufi code' }, k.code),
         h('span', { class: 'status-pill', style: { background: statusBg(s, colors()) } }, STATUS_LABEL[s])),
-      h('div', { class: 'hint' }, [k.grp && 'مجموعة ' + k.grp, k.category, k.zone, k.capacity && '👥 ' + k.capacity + ' أشخاص'].filter(Boolean).join(' · '),
+      h('div', { class: 'hint' }, [k.grp && 'مجموعة ' + k.grp, k.category, k.zone, k.capacity && '👥 ' + k.capacity + ' أشخاص', minSpendOf(k) && 'حد أدنى ' + money(minSpendOf(k))].filter(Boolean).join(' · '),
         k.list_price != null ? h('div', {}, 'السعر الاسترشادي: ', h('span', { class: 'num' }, money(k.list_price))) : null),
       k.needs_verify ? h('p', { class: 'warnbox' }, 'رقم هذا الكشك بحاجة لتأكيد. ', k.note || '') : null,
       bookable && can.book() ? h('button', { class: 'btn primary', onclick: () => openBooking({
@@ -960,3 +990,13 @@ function freeGaps(rs, start, end) {
 }
 
 boot();
+
+// zone / category input with the project's zones as suggestions
+function zoneInput(value) {
+  const id = 'zl-' + Math.random().toString(36).slice(2);
+  const inp = h('input', { class: 'in', value: value || '', list: id, placeholder: zones().length ? 'اختر منطقة' : 'مثال: VIP، ذهبي، عادي' });
+  const dl = h('datalist', { id }, zones().map(z => h('option', { value: z.name })));
+  const wrap = h('span', { style: { display: 'contents' } }, inp, dl);
+  Object.defineProperty(wrap, 'value', { get: () => inp.value, set: v => { inp.value = v; } });
+  return wrap;
+}

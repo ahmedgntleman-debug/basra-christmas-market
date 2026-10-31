@@ -1,5 +1,6 @@
 // Public availability page. Talks to ONE database function (get_public_map) that
 // returns only kiosk codes, shapes and availability — never names, phones or money.
+import { money } from './common.js';
 import { sb, configured, $, h, fmtDate, waLink, normDigits, DEFAULT_COLORS, statusBg } from './common.js';
 import { MapView } from './map.js';
 import { startI18n, isEn, setTerms } from './i18n.js';
@@ -43,6 +44,7 @@ async function load(first) {
   }
   const kiosks = d.kiosks.map(k => ({ ...k, id: k.code, needs_verify: false }));
   mv.setColors({ ...DEFAULT_COLORS, ...(edition.colors || {}) });
+  if (first) mv.setZones(edition.zones || []);
   mv.setKiosks(kiosks);
   mv.setStatuses(new Map(kiosks.map(k => [k.id, k.status])));
   if (selected) mv.setSelected([selected]);
@@ -69,7 +71,9 @@ function legend() {
   const n = s => data.kiosks.filter(k => k.status === s).length;
   $('#legend').replaceChildren(
     ...['available', 'partial', 'reserved'].map(s => h('span', {}, h('i', { style: { background: statusBg(s, c) } }), LEG[s], ' ', h('b', { class: 'num' }, n(s)))),
-    h('span', {}, `${fmtDate(data.from)} – ${fmtDate(data.to)}`));
+    h('span', {}, `${fmtDate(data.from)} – ${fmtDate(data.to)}`),
+    ...(edition.zones || []).filter(z => z.color && data.kiosks.some(k => k.zone === z.name)).map(z => h('span', { class: 'zone-key' }, h('i', { style: { borderColor: z.color } }), z.name,
+      edition.show_prices && z.price ? h('small', {}, ' ' + money(z.price)) : null)));
 }
 
 function filter() {
@@ -95,10 +99,20 @@ function sheet() {
       h('span', { class: 'status-pill', style: { background: statusBg(k.status, c) || '#888', color: '#fff', padding: '4px 12px', borderRadius: '999px', fontWeight: 600, fontSize: '13px' } }, LEG[k.status]),
       h('button', { class: 'x', 'aria-label': 'إغلاق', onclick: () => { selected = null; mv.setSelected([]); sheet(); } }, '×')),
     h('p', { class: 'msg' }, TEXT[k.status](k.code)),
+    zoneLine(k),
     k.capacity ? h('p', { class: 'hint', style: { margin: 0, fontSize: '15px' } }, `👥 تتسع لـ ${k.capacity} ${k.capacity > 10 || k.capacity < 3 ? 'شخص' : 'أشخاص'}`) : null,
     open ? h('p', { class: 'hint', style: { fontSize: '14px' } }, `للاستفسار يرجى التواصل مع إدارة ${edition.name}.`) : null,
     open ? contactsBlock(msg) : null));
   mv.setSelected([k.code]);
+}
+
+const zoneOfK = k => (edition.zones || []).find(z => z.name === k.zone) || null;
+function zoneLine(k) {
+  const z = zoneOfK(k); if (!z && !k.min_spend) return null;
+  const ms = k.min_spend ?? z?.min_spend;
+  return h('p', { class: 'zone-line' }, z ? h('span', { class: 'zone-chip', style: { '--z': z.color || '#999' } }, z.name) : null,
+    edition.show_prices && z?.price ? h('span', {}, 'السعر ', h('b', { class: 'num' }, money(z.price))) : null,
+    edition.show_prices && ms ? h('span', {}, 'الحد الأدنى للطلب ', h('b', { class: 'num' }, money(ms))) : null);
 }
 
 function contactsBlock(msg) {

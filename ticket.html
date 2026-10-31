@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>التذكرة</title>
+<link rel="icon" href="img/icon-192.png" type="image/png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lalezar&family=Readex+Pro:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/festive.css">
+<style>
+  body { min-height: 100dvh; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 22px 16px 40px;
+    background: radial-gradient(700px 360px at 80% -10%, color-mix(in srgb, var(--t-primary) 55%, transparent), transparent 70%), linear-gradient(180deg, var(--t-deep), var(--t-dark) 70%, var(--t-dark2)); }
+  #ticket { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
+  .tk-card { background: #fff; border-radius: 24px; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.35); position: relative; color: #1d2420; }
+  .tk-head { display: flex; align-items: center; gap: 12px; padding: 18px; color: #fff;
+    background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--b) 70%, transparent), transparent 70%), linear-gradient(160deg, var(--a), color-mix(in srgb, var(--a) 70%, #000)); }
+  .tk-head .proj-logo { flex: none; max-width: 92px; }
+  .tk-head .proj-logo img { max-height: 64px; width: auto; }
+  .tk-head .proj-logo.text .tl-name { display: none; } .tk-head .proj-logo.text .tl-icon { font-size: 46px; }
+  .tk-head h1 { margin: 0; font-family: Lalezar, "Readex Pro", serif; font-weight: 400; font-size: 24px; line-height: 1.15; color: var(--g); }
+  .tk-head p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+  .tk-state { text-align: center; font-weight: 700; padding: 8px; font-size: 15px; }
+  .tk-state.ok { background: #e3f4e8; color: #1f7a3f; } .tk-state.used { background: #fff3d6; color: #8a5a00; }
+  .tk-state.bad { background: #fde4e4; color: #a11d1d; } .tk-state.held { background: #fff3d6; color: #8a5a00; }
+  .tk-body { padding: 14px 18px 6px; display: flex; flex-direction: column; gap: 8px; }
+  .tk-units { display: flex; flex-direction: column; align-items: center; gap: 2px; padding-bottom: 6px; }
+  .tk-units span { font-size: 12px; color: #7a7264; } .tk-units strong { font-family: Lalezar, serif; font-weight: 400; font-size: 40px; line-height: 1; color: var(--b); }
+  .tk-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; border-bottom: 1px dashed #eee; padding-bottom: 6px; }
+  .tk-row span { color: #7a7264; }
+  .tk-tear { height: 24px; position: relative; margin: 4px 0; }
+  .tk-tear::after { content: ""; position: absolute; inset-inline: 20px; top: 50%; border-top: 2px dashed #ddd; }
+  .tk-tear::before { content: ""; position: absolute; inset-inline: -12px; top: 0; height: 24px; background: radial-gradient(circle at 12px 12px, var(--t-dark) 11px, transparent 12px) left/24px 24px no-repeat, radial-gradient(circle at 12px 12px, var(--t-dark) 11px, transparent 12px) right/24px 24px no-repeat; }
+  .tk-foot { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 18px 20px; }
+  .tk-qr svg { display: block; width: 220px; height: 220px; }
+  .tk-code { display: flex; flex-direction: column; align-items: center; } .tk-code span { font-size: 12px; color: #7a7264; }
+  .tk-code b { font-size: 26px; letter-spacing: 4px; font-family: ui-monospace, monospace; }
+  .tk-hint { margin: 0; font-size: 12.5px; color: #7a7264; text-align: center; }
+  .tk-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+  .tk-tools .btn { background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.35); }
+  .tk-tools .btn.primary { background: linear-gradient(180deg, #2fb35a, #1f7a3f); border: 0; font-size: 17px; padding: 12px 22px; }
+  .tk-staff { width: 100%; text-align: center; color: #fff; font-size: 13px; opacity: .85; }
+  .tk-err { padding: 40px 20px; text-align: center; } .tk-big { font-size: 60px; }
+  .tk-alert { position: fixed; top: 16px; inset-inline: 16px; background: #a11d1d; color: #fff; padding: 14px; border-radius: 14px; text-align: center; font-weight: 600; z-index: 99; }
+  @media print { body { background: #fff; padding: 0; } .tk-tools { display: none; } .tk-card { box-shadow: none; border: 1px solid #ddd; } }
+</style>
+</head>
+<body>
+<main id="ticket"><div class="tk-card tk-err"><div class="tk-big">🎫</div><p>جارٍ تحميل التذكرة…</p></div></main>
+<script src="config.js"></script>
+<script src="vendor/supabase.js"></script>
+<script type="module" src="js/ticket.js"></script>
+</body>
+</html>

@@ -42,6 +42,10 @@ export const settings = () => ({
   sponsor_template: DEFAULT_SPONSOR_CONTRACT,
   ...(S.edition?.settings || {}),
 });
+// price / colour zones (VIP, gold, regular…) — a kiosk's category names its zone
+export const zones = () => (settings().zones || []).filter(z => z && z.name);
+export const zoneOf = k => k && zones().find(z => z.name === (k.zone ?? k.category)) || null;
+export const minSpendOf = k => k ? (k.min_spend ?? zoneOf(k)?.min_spend ?? null) : null;
 export const colors = () => ({
   available: '#2e8b57', reserved: '#c0392b', held: '#e67e22', partial: '#f1c40f', disabled: '#9e9e9e',
   ...(S.edition?.colors || {}),

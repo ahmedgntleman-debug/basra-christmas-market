@@ -1,7 +1,8 @@
 // Projects: create a new event (concert, match, Eid party, festival …) and edit everything about it.
 import { sb, h, toast, errText, modal, fmtDate, todayISO, addDays, esc } from './common.js';
 import { S, can, loadEditions, switchEdition, isActive, adminLink, publicLink } from './state.js';
-import { THEMES, THEME_ORDER, UNITS, logoNode, applyTheme } from './themes.js';
+import { THEMES, THEME_ORDER, UNITS, logoNode, applyTheme, printLogo } from './themes.js';
+import { qrSVG, svgToPng } from './qr.js';
 import { field } from './booking.js';
 
 export const GENERIC_CONTRACT = `اتفاقية حجز
@@ -11,6 +12,7 @@ export const GENERIC_CONTRACT = `اتفاقية حجز
 
 البند الأول: موضوع الحجز
 يحجز الطرف الثاني {unit} رقم ({kiosks}) في {festival}، للفترة من {start} إلى {end}، وعدد الأشخاص: {guests}.
+المنطقة: {zone}، والحد الأدنى للطلب: {min_spend}.
 
 البند الثاني: المبلغ
 المبلغ الكلي المتفق عليه ({total})، المدفوع ({paid})، والمتبقي ({remaining}) يُسدد في موعد أقصاه {deadline}.
@@ -110,11 +112,11 @@ export function openNewProject() {
       const base = { name, slug, start_date: I.start.value, end_date: end, event_type: type, venue: I.venue.value.trim() || null, unit_kind: I.unit.value,
         event_time: I.time.value || null };
       if (I.copyLayout.checked && E) {
-        const { data, error } = await sb.rpc('clone_edition', { p_source: E.id, p: { ...base, copy_map: true, copy_kiosks: true, copy_categories: true, copy_prices: false, copy_branding: false } });
+        const { data, error } = await sb.rpc('clone_edition', { p_source: E.id, p: { ...base, copy_map: true, copy_kiosks: true, copy_categories: true, copy_prices: false, copy_branding: false, public_enabled: false } });
         if (error) throw error; id = data;
-        await sb.from('editions').update({ event_type: type, unit_kind: I.unit.value, venue: base.venue, event_time: base.event_time, logo_url: null }).eq('id', id);
+        await sb.from('editions').update({ event_type: type, unit_kind: I.unit.value, venue: base.venue, event_time: base.event_time, logo_url: null, public_enabled: false }).eq('id', id);
       } else {
-        const { data, error } = await sb.from('editions').insert({ ...base, map_url: 'grid', map_w: 2000, map_h: 1400,
+        const { data, error } = await sb.from('editions').insert({ ...base, map_url: 'grid', map_w: 2000, map_h: 1400, public_enabled: false,
           contacts: I.copyContacts.checked ? (E?.contacts || []) : [], contact_phone: I.copyContacts.checked ? E?.contact_phone : null, contact_whatsapp: I.copyContacts.checked ? E?.contact_whatsapp : null,
           settings: I.unit.value === 'kiosk' ? {} : { contract_template: GENERIC_CONTRACT } }).select('id').single();
         if (error) throw error; id = data.id;
@@ -148,7 +150,7 @@ export function projectFields(E, dis) {
   let logoUrl = E.logo_url || null, mapPatch = null;
   const logoBox = h('div', { class: 'logo-edit' });
   const paintLogo = () => logoBox.replaceChildren(logoNode({ ...E, event_type: type, logo_url: logoUrl }, 'hero'),
-    logoUrl && !dis ? h('button', { type: 'button', class: 'btn small danger', onclick: () => { logoUrl = null; paintLogo(); } }, 'إزالة الشعار') : null);
+    logoUrl && !dis ? h('button', { type: 'button', class: 'btn small danger', onclick: () => { logoUrl = null; paintLogo(); } }, 'إزالة الشعار') : '');
   I.logo.onchange = async () => {
     const f = I.logo.files[0]; if (!f) return;
     try { logoUrl = await uploadTo(`${E.id}/logo-${Date.now()}.${(f.name.split('.').pop() || 'png').toLowerCase()}`, f); paintLogo(); toast('تم رفع الشعار — اضغط حفظ'); }
@@ -181,16 +183,96 @@ export function projectsSection(sec) {
     const T = THEMES[e.event_type] || THEMES.christmas, cur = e.id === S.edition?.id;
     return h('div', { class: 'proj-row' + (cur ? ' cur' : ''), style: { '--a': T.c.dark, '--b': T.c.primary } },
       h('span', { class: 'pr-icon' }, T.icon),
-      h('div', { class: 'pr-main' }, h('strong', {}, e.name), h('span', { class: 'hint' }, `${T.label} · ${e.start_date === e.end_date ? fmtDate(e.start_date) : fmtDate(e.start_date) + ' – ' + fmtDate(e.end_date)}${e.venue ? ' · ' + e.venue : ''}${e.archived ? ' · مؤرشف' : ''}`)),
+      h('div', { class: 'pr-main' }, h('strong', {}, e.name, ' ', h('span', { class: 'pub-badge ' + (e.public_enabled ? 'on' : 'off') }, e.public_enabled ? '● ظاهر للزبائن' : '○ مخفي عن الزبائن')), h('span', { class: 'hint' }, `${T.label} · ${e.start_date === e.end_date ? fmtDate(e.start_date) : fmtDate(e.start_date) + ' – ' + fmtDate(e.end_date)}${e.venue ? ' · ' + e.venue : ''}${e.archived ? ' · مؤرشف' : ''}`)),
       h('div', { class: 'pr-acts' },
         isActive(e) ? copyBtn('🔗 رابط المنظمين', adminLink(e)) : null,
+        can.admin() ? h('button', { type: 'button', class: 'btn small ' + (e.public_enabled ? 'ghost' : 'pine'), onclick: () => togglePublic(e) },
+          e.public_enabled ? '⏸ إخفاء عن الزبائن' : '▶ تفعيل للزبائن') : null,
         isActive(e) && e.public_enabled ? copyBtn('🔗 رابط الزبائن', publicLink(e)) : null,
+        e.public_enabled ? h('button', { type: 'button', class: 'btn small', onclick: () => openProjectQR(e) }, '▦ QR') : null,
         isActive(e) && e.public_enabled ? h('a', { class: 'btn small wa', target: '_blank', rel: 'noopener',
           href: 'https://wa.me/?text=' + encodeURIComponent(`${T.icon} ${e.name}\n${publicLink(e)}`) }, 'واتساب') : null,
-        cur ? h('span', { class: 'badge b-confirmed' }, 'مفتوح الآن') : h('button', { class: 'btn small', onclick: () => switchEdition(e.id) }, 'فتح')));
+        cur ? h('span', { class: 'badge b-confirmed' }, 'مفتوح الآن') : h('button', { class: 'btn small', onclick: () => switchEdition(e.id) }, 'فتح'),
+        can.admin() ? h('button', { type: 'button', class: 'btn small danger', title: 'حذف المشروع نهائياً', onclick: () => deleteProject(e) }, '🗑 حذف') : null));
   }));
   const general = h('div', { class: 'linkbox' }, h('span', { class: 'hint' }, 'الرابط العام (يفتح أقرب مشروع فعّال تلقائياً، ويمكن للزبون التبديل بين المشاريع):'),
     h('code', { dir: 'ltr' }, new URL('public.html', location.href).href), copyBtn('نسخ', new URL('public.html', location.href).href));
   return sec('المشاريع', h('p', { class: 'hint', style: { margin: 0 } }, 'كل مشروع له خريطته وأكشاكه أو طاولاته وحجوزاته وتقاريره وتصميمه الخاص.'),
     list, general, can.admin() ? h('div', {}, h('button', { class: 'btn primary', onclick: openNewProject }, '✨ مشروع جديد')) : null);
+}
+
+async function togglePublic(e) {
+  const on = !e.public_enabled;
+  const { error } = await sb.from('editions').update({ public_enabled: on }).eq('id', e.id);
+  if (error) return toast(errText(error), { error: true });
+  e.public_enabled = on;
+  await loadEditions(); window.dispatchEvent(new Event('bcm:settings'));
+  toast(on ? `أصبح «${e.name}» ظاهراً للزبائن في صفحة الخريطة` : `أُخفي «${e.name}» عن الزبائن`);
+  location.hash.includes('settings') && window.dispatchEvent(new HashChangeEvent('hashchange'));
+}
+
+function deleteProject(e) {
+  const nRes = e.id === S.edition?.id ? S.reservations.filter(r => r.status !== 'cancelled').length : null;
+  const inp = h('input', { class: 'in', placeholder: e.name, autocomplete: 'off' });
+  const go = h('button', { class: 'btn danger', disabled: true }, '🗑 حذف المشروع نهائياً');
+  inp.oninput = () => { go.disabled = inp.value.trim() !== e.name.trim(); };
+  const md = modal({ title: 'حذف المشروع «' + e.name + '»', body: [
+    h('p', { class: 'warnbox', style: { margin: 0 } }, 'سيُحذف المشروع نهائياً مع خريطته وكل الأكشاك أو الطاولات والحجوزات والدفعات والأقساط والعقود والإيرادات اليومية والأرباح والخسائر الخاصة به. لا يمكن التراجع عن هذا.',
+      nRes ? h('strong', { style: { display: 'block', marginTop: '6px' } }, `على هذا المشروع ${nRes} حجز قائم.`) : null),
+    h('p', { class: 'hint', style: { margin: 0 } }, 'العملاء يبقون في قائمة العملاء لأنهم قد يكونون في مشاريع أخرى. ننصح بتصدير نسخة احتياطية أولاً من الإعدادات ← النسخ الاحتياطي.'),
+    h('p', { class: 'hint', style: { margin: 0 } }, 'إذا كنت تريد فقط إيقافه أو إخفاءه فاستخدم «إخفاء عن الزبائن» أو «مشروع مؤرشف» بدلاً من الحذف.'),
+    h('label', { class: 'f' }, h('span', {}, 'للتأكيد اكتب اسم المشروع: ', h('b', {}, e.name)), inp)],
+    footer: [go, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')] });
+  go.onclick = async () => {
+    go.disabled = true; go.textContent = 'جارٍ الحذف…';
+    const { data, error } = await sb.rpc('delete_edition', { p_edition: e.id, p_confirm: inp.value });
+    if (error) { go.disabled = false; go.textContent = '🗑 حذف المشروع نهائياً'; return toast(errText(error), { error: true }); }
+    // best-effort: remove its uploaded map and logo
+    try { const ls = await sb.storage.from('maps').list(e.id); if (ls.data?.length) await sb.storage.from('maps').remove(ls.data.map(f => `${e.id}/${f.name}`)); } catch {}
+    md.close();
+    const wasOpen = e.id === S.edition?.id;
+    try { sessionStorage.removeItem('bcm.edition'); } catch {}
+    toast(`حُذف «${data.name}» (${data.reservations} حجز، ${data.payments} دفعة)`);
+    if (wasOpen) { const u = new URL(location.href); u.searchParams.delete('p'); location.replace(u.pathname + u.search + '#/settings'); setTimeout(() => location.reload(), 50); }
+    else { await loadEditions(); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+  };
+}
+
+// printable / downloadable QR poster for a project's booking map
+export async function openProjectQR(e) {
+  const T = THEMES[e.event_type] || THEMES.christmas, U = UNITS[e.unit_kind] || UNITS.kiosk, url = publicLink(e);
+  const svg = await qrSVG(url, { size: 260, dark: T.c.dark, eye: T.c.primary });
+  const when = e.start_date === e.end_date ? fmtDate(e.start_date) : `${fmtDate(e.start_date)} – ${fmtDate(e.end_date)}`;
+  const card = h('div', { class: 'qr-poster', style: { '--a': T.c.dark, '--b': T.c.primary, '--g': T.c.gold } },
+    h('div', { class: 'qp-logo' }, logoNode(e, 'hero')),
+    h('h3', {}, e.name), h('p', {}, [when, e.event_time, e.venue].filter(Boolean).join(' · ')),
+    h('div', { class: 'qp-code', html: svg }),
+    h('strong', { class: 'qp-cta' }, `📱 امسح الرمز واختر ${U.one === 'كشك' ? 'كشكك' : U.one + 'ك'} من الخريطة`),
+    h('code', { dir: 'ltr' }, url.replace(/^https?:\/\//, '')));
+  const md = modal({ title: 'رمز QR — ' + e.name, body: [
+    h('p', { class: 'hint', style: { margin: 0 } }, 'اطبعه على البوسترات والطاولات والفلايرات أو انشره في السوشيال ميديا. يفتح خريطة الحجز لهذا المشروع مباشرة.'), card],
+    footer: [
+      h('button', { class: 'btn primary', onclick: async () => { const a = h('a', { href: await svgToPng(await qrSVG(url, { size: 1024, dark: T.c.dark, eye: T.c.primary }), 1024), download: `QR-${e.slug}.png` }); a.click(); } }, '⬇ تنزيل الرمز (PNG)'),
+      h('button', { class: 'btn', onclick: () => printPoster(e, svg, when, U, url, T) }, '🖨 طباعة بوستر'),
+      h('button', { class: 'btn', onclick: () => md.close() }, 'إغلاق')] });
+}
+
+function printPoster(e, svg, when, U, url, T) {
+  const w = window.open('', '_blank'); if (!w) return toast('اسمح بالنوافذ المنبثقة لطباعة البوستر', { error: true });
+  const logo = e.logo_url || printLogo(e), C = T.c;
+  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>QR — ${esc(e.name)}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lalezar&family=Readex+Pro:wght@400;600&display=swap">
+<style>@page{size:A4;margin:0}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box}
+body{margin:0;font-family:"Readex Pro",Tahoma,sans-serif;background:#eee}
+.p{width:210mm;height:297mm;margin:0 auto;background:radial-gradient(120% 60% at 50% 0%,${C.primary},transparent 70%),linear-gradient(170deg,${C.dark},${C.deep});color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9mm;text-align:center;padding:18mm;position:relative;overflow:hidden}
+.p:before{content:"${T.icon} ${T.icon} ${T.icon}";position:absolute;top:8mm;letter-spacing:18mm;font-size:16mm;opacity:.18}
+.p:after{content:"${T.icon} ${T.icon} ${T.icon}";position:absolute;bottom:6mm;letter-spacing:18mm;font-size:16mm;opacity:.18}
+img.l{max-height:42mm;max-width:120mm;filter:drop-shadow(0 4mm 6mm rgba(0,0,0,.35))}.ic{font-size:34mm;line-height:1}
+h1{font-family:Lalezar,serif;font-weight:400;font-size:17mm;margin:0;line-height:1.1;color:${C.goldHi || C.gold}}
+.w{font-size:6mm;opacity:.9}.q{background:#fff;padding:7mm;border-radius:9mm;box-shadow:0 6mm 16mm rgba(0,0,0,.35);border:2mm solid ${C.gold}}.q svg{width:95mm;height:95mm;display:block}
+.c{font-size:8mm;font-weight:600}.u{font-size:4.2mm;opacity:.8;direction:ltr}.bar{position:fixed;top:10px;left:10px}@media print{.bar{display:none}body{background:none}}</style></head><body>
+<div class="bar"><button onclick="print()" style="font:inherit;padding:8px 16px">طباعة / PDF</button></div>
+<div class="p">${logo ? `<img class="l" src="${esc(logo)}">` : `<div class="ic">${T.icon}</div>`}<h1>${esc(e.name)}</h1><div class="w">${esc([when, e.event_time, e.venue].filter(Boolean).join(' · '))}</div>
+<div class="q">${svg}</div><div class="c">📱 امسح الرمز للحجز — ${esc(U.many)} متوفرة على الخريطة</div><div class="u">${esc(url.replace(/^https?:\/\//, ''))}</div></div></body></html>`);
+  w.document.close();
 }

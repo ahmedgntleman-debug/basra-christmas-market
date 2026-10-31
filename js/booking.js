@@ -4,7 +4,9 @@ import {
   todayISO, addDays, daysBetween, badge, PAY_LABEL, RES_LABEL, waLink, esc, fmtDateTime,
 } from './common.js';
 import { celebrate } from './festive.js';
+import { openTicket } from './checkin.js';
 import { THEMES, UNITS, printLogo } from './themes.js';
+import { zoneOf, minSpendOf } from './state.js';
 import { S, can, refresh, settings, kioskById, kioskByCode, customerById, codeSort, DEFAULT_CONTRACT, DEFAULT_SPONSOR_CONTRACT } from './state.js';
 
 export const DEAL_LABEL = { rental: 'إيجار كشك', sponsorship: 'رعاية' };
@@ -153,6 +155,7 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
   function setDeal(v, e) { deal = v; $$('button', dealSeg).forEach(b => b.setAttribute('aria-pressed', b === e.currentTarget)); priceLabel.textContent = v === 'sponsorship' ? 'قيمة الرعاية المتفق عليها' : 'مبلغ الإيجار المتفق عليه'; }
   priceLabel.textContent = deal === 'sponsorship' ? 'قيمة الرعاية المتفق عليها' : 'مبلغ الإيجار المتفق عليه';
   const price = amountInput('price');
+  const price_ = price.inp;
   const discount = amountInput('discount', null, { placeholder: '0' });
   const extra = amountInput('extra', null, { placeholder: '0' });
   const pay = amountInput('pay');
@@ -171,8 +174,17 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
   guests.oninput = () => { guests.dataset.touched = '1'; recap(); };
   const showGuests = E.unit_kind && E.unit_kind !== 'kiosk' || S.kiosks.some(k => k.capacity);
 
+  const zoneOut = h('span', { class: 'hint zone-hint' });
+  const rezone = () => {
+    const ks = kp.ids.map(kioskById).filter(Boolean);
+    const zs = [...new Set(ks.map(k => zoneOf(k)?.name).filter(Boolean))];
+    const price = ks.reduce((a, k) => a + (zoneOf(k)?.price || 0), 0), ms = ks.reduce((a, k) => a + (minSpendOf(k) || 0), 0);
+    zoneOut.textContent = [zs.length && 'المنطقة: ' + zs.join('، '), price && 'سعر المنطقة: ' + money(price), ms && 'الحد الأدنى للطلب: ' + money(ms)].filter(Boolean).join(' · ');
+    if (price && !price_touched) price_.placeholder = fmtNum(price);
+  };
+  let price_touched = false;
   const recheck = () => {
-    recap();
+    recap(); rezone();
     const ok = start.value && end.value && end.value >= start.value;
     daysOut.textContent = ok ? `${daysBetween(start.value, end.value)} يوماً` : 'تاريخ النهاية قبل البداية';
     const c = ok ? conflicts(kp.ids, start.value, end.value) : [];
@@ -190,7 +202,7 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
     h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', marginTop: '-6px' } }, daysOut, fullBtn),
     showGuests ? field('عدد الأشخاص', guests, capOut) : null,
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } }, h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, seg, dealSeg), holdRow),
-    h('label', { class: 'f' }, priceLabel, price.inp, h('span', {}, price.out, h('span', { class: 'hint' }, ' — اتركه فارغاً إذا لم يُتفق على السعر بعد'))),
+    h('label', { class: 'f' }, priceLabel, price.inp, h('span', {}, price.out, h('span', { class: 'hint' }, ' — اتركه فارغاً إذا لم يُتفق على السعر بعد')), zoneOut),
     h('details', {}, h('summary', { class: 'hint', style: { cursor: 'pointer' } }, 'خصم أو رسوم إضافية'),
       h('div', { class: 'grid2', style: { marginTop: '10px' } }, field('خصم', discount.inp, discount.out), field('رسوم إضافية', extra.inp, extra.out))),
     h('div', { class: 'grid3' }, field('دفعة أولى (اختياري)', pay.inp, pay.out), field('طريقة الدفع', method), field('موعد تسديد المتبقي', deadline)),
@@ -251,6 +263,7 @@ export async function openReservation(id) {
     live && can.book() ? h('button', { class: 'btn', onclick: () => { m.close(); openChangeKiosks(id); } }, 'تغيير / نقل الأكشاك') : null,
     live && r.status === 'held' && can.book() ? h('button', { class: 'btn pine', onclick: () => confirmHold(r, m) }, 'تأكيد الحجز') : null,
     h('button', { class: 'btn', onclick: () => { m.close(); openContract(id); } }, contractName(r.deal_type)),
+    live && r.status === 'confirmed' ? h('button', { class: 'btn pine', onclick: () => { m.close(); openTicket(r); } }, '🎫 التذكرة') : null,
     live && r.remaining > 0 && r.customer_phone ? h('button', { class: 'btn wa', onclick: () => { m.close(); openReminder(id); } }, 'تذكير واتساب') : null,
     live && can.book() ? h('button', { class: 'btn danger', style: { marginInlineStart: 'auto' }, onclick: () => cancelRes(r, m) }, 'إلغاء الحجز') : null,
   );
@@ -611,7 +624,9 @@ export function fillTemplate(tpl, r) {
     remaining: r.remaining == null ? '..................' : money(r.remaining),
     deadline: r.payment_deadline ? fmtDate(r.payment_deadline) : '..................', today: fmtDateLong(todayISO()),
     notes: r.notes ? 'ملاحظات: ' + r.notes : '', contact: c.contact_person || '..................',
-    guests: r.guests ? fmtNum(r.guests) : '..................', unit: (UNITS[E.unit_kind] || UNITS.kiosk).one, venue: E.venue || '..................',
+    guests: r.guests ? fmtNum(r.guests) : '..................',
+    zone: [...new Set(r.kiosk_ids.map(kioskById).map(k => zoneOf(k)?.name).filter(Boolean))].join('، ') || '..................',
+    min_spend: (() => { const v = r.kiosk_ids.map(kioskById).reduce((a, k) => a + (minSpendOf(k) || 0), 0); return v ? money(v) : '..................'; })(), unit: (UNITS[E.unit_kind] || UNITS.kiosk).one, venue: E.venue || '..................',
   };
   return tpl.replace(/\{(\w+)\}/g, (m0, k) => (k in map ? map[k] : m0));
 }

@@ -387,7 +387,7 @@ export function pickDate(what, onPick) {
   const paint = () => {
     const d = inp.value;
     const inFest = d && d >= E.start_date && d <= E.end_date;
-    label.replaceChildren(d ? fmtDateLong(d) : '—', d ? h('span', { class: 'hint' }, d === today ? ' · اليوم' : '', inFest ? ` · اليوم ${daysBetween(E.start_date, d)} من المهرجان` : d < E.start_date ? ' · قبل الافتتاح' : ' · بعد انتهاء المهرجان') : null);
+    label.replaceChildren(d ? fmtDateLong(d) : '—', d ? h('span', { class: 'hint' }, d === today ? ' · اليوم' : '', inFest ? ` · اليوم ${daysBetween(E.start_date, d)} من المهرجان` : d < E.start_date ? ' · قبل الافتتاح' : ' · بعد انتهاء المهرجان') : '');
     chips.forEach(([b, v]) => b.setAttribute('aria-pressed', v === d));
   };
   const chips = [['اليوم', today], ['أمس', addDays(today, -1)], ['يوم الافتتاح', E.start_date], ['آخر يوم', E.end_date]]

@@ -504,6 +504,7 @@ export function pageSettings(root) {
       saveInfo ? h('div', {}, saveInfo) : null),
     sec('رابط الخريطة العامة للزبائن', h('p', { class: 'hint', style: { margin: 0 } }, 'شاركه على واتساب وفيسبوك وإنستغرام. يعرض الأكشاك المتوفرة والمحجوزة فقط، بدون أسماء أو أرقام أو مبالغ.'), linkBox),
     sec('ألوان الحالات على الخريطة', colorRow),
+    zonesSection(sec, E, cfg, dis, saveEdition),
     sec('الميزات الاختيارية',
       h('label', { class: 'check' }, F.reminders, 'تنبيهات الدفعات المستحقة في الرئيسية'),
       h('div', { class: 'check', style: { paddingInlineStart: '26px', flexWrap: 'wrap' } }, 'أظهر التنبيه قبل موعد التسديد بـ', F.days, 'أيام'),
@@ -514,7 +515,7 @@ export function pageSettings(root) {
       h('label', { class: 'check' }, F.advanced, 'التقارير المتقدمة (الحجوزات حسب الفترة، مقارنة النسخ)'),
       field('بعد حفظ الحجز — عقد الإيجار', F.contract),
       h('div', { class: 'grid2' }, field('رابط شعار الشركة (يظهر في العقد)', logoUrl), field('أو ارفع صورة الشعار', logoFile)),
-      field('نص عقد الحجز', tpl, h('span', { class: 'hint' }, 'الحقول التي تُملأ تلقائياً: {festival} {festival_start} {festival_end} {customer} {company_line} {contact} {phone} {email} {kiosks} {start} {end} {days} {daily} {guests} {unit} {total} {paid} {remaining} {deadline} {today} {notes}')),
+      field('نص عقد الحجز', tpl, h('span', { class: 'hint' }, 'الحقول التي تُملأ تلقائياً: {festival} {festival_start} {festival_end} {customer} {company_line} {contact} {phone} {email} {kiosks} {start} {end} {days} {daily} {guests} {unit} {zone} {min_spend} {total} {paid} {remaining} {deadline} {today} {notes}')),
       field('نص عقد الرعاية', stpl),
       admin ? h('div', { style: { display: 'flex', gap: '8px' } }, saveFeatures, h('button', { class: 'btn ghost', onclick: () => { tpl.value = DEFAULT_CONTRACT; stpl.value = DEFAULT_SPONSOR_CONTRACT; } }, 'استعادة نصوص العقود الافتراضية')) : null),
   ];
@@ -648,4 +649,51 @@ function assistantSection(sec, E, saveEdition) {
     h('div', { class: 'grid2' }, field('مفتاح Gemini API', key), field('النموذج', h('div', {}, model, dl, h('span', { class: 'hint' }, 'اكتب auto ليختار النظام أحدث نموذج متاح تلقائياً، حتى لو أوقفت Google نموذجاً قديماً.')))),
     h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } }, save, test, out),
     h('p', { class: 'warnbox' }, 'المفتاح يُحفظ في قاعدة البيانات ويراه الموظفون المسجلون فقط. مع المفتاح المجاني قد تستخدم Google النصوص المرسلة لتحسين خدماتها؛ تُرسل أسماء العملاء وأرقام الأكشاك والمبالغ فقط، ولا تُرسل أرقام الهواتف إلا إذا كتبتها في الطلب.'));
+}
+
+// ---- zones: VIP / gold / regular … with a colour, a price and a minimum spend ----
+const ZONE_PRESETS = [['VIP', '#d4a017', ''], ['ذهبي', '#e67e22', ''], ['فضي', '#8e9aa6', ''], ['عادي', '#3a86ff', '']];
+function zonesSection(sec, E, cfg, dis, saveEdition) {
+  const rows = [];
+  const box = h('div', { class: 'zone-rows' });
+  const add = (z = {}) => {
+    const st = {
+      name: h('input', { class: 'in', value: z.name || '', disabled: dis, placeholder: 'اسم المنطقة، مثل VIP' }),
+      color: h('input', { type: 'color', value: z.color || '#d4a017', disabled: dis }),
+      price: h('input', { class: 'in', inputmode: 'decimal', value: z.price ? fmtNum(z.price) : '', disabled: dis, placeholder: 'السعر (اختياري)' }),
+      min: h('input', { class: 'in', inputmode: 'decimal', value: z.min_spend ? fmtNum(z.min_spend) : '', disabled: dis, placeholder: 'حد أدنى للطلب (اختياري)' }),
+      orig: z.name || null,
+    };
+    const n = S.kiosks.filter(k => k.category && k.category === z.name).length;
+    const row = h('div', { class: 'zone-row' }, st.color, st.name, st.price, st.min,
+      h('span', { class: 'hint' }, z.name ? `${n} ${unitOf().many}` : ''),
+      dis ? null : h('button', { type: 'button', class: 'btn small danger', onclick: () => { row.remove(); rows.splice(rows.indexOf(st), 1); } }, 'حذف'));
+    rows.push(st); box.append(row);
+  };
+  (cfg.zones || []).forEach(add);
+  const showPrices = h('input', { type: 'checkbox', checked: !!cfg.show_prices, disabled: dis });
+  const save = dis ? null : h('button', { class: 'btn primary', onclick: async () => {
+    const out = [];
+    for (const r of rows) {
+      const name = r.name.value.trim(); if (!name) continue;
+      const price = r.price.value.trim() ? parseAmount(r.price.value) : null, min = r.min.value.trim() ? parseAmount(r.min.value) : null;
+      if (Number.isNaN(price) || Number.isNaN(min)) return toast('أحد المبالغ غير صالح في «' + name + '»', { error: true });
+      out.push({ name, color: r.color.value, price, min_spend: min });
+    }
+    // renaming a zone renames it on its kiosks too
+    for (const r of rows) {
+      const b = r.name.value.trim();
+      if (r.orig && b && r.orig !== b) await sb.from('kiosks').update({ category: b }).eq('edition_id', E.id).eq('category', r.orig);
+    }
+    await saveEdition({ settings: { ...(E.settings || {}), zones: out, show_prices: showPrices.checked } }, 'تم حفظ المناطق');
+    await refresh();
+  } }, 'حفظ المناطق');
+  return sec('المناطق والأسعار (VIP، ذهبي، عادي…)',
+    h('p', { class: 'hint', style: { margin: 0 } }, 'كل منطقة تظهر بإطار ملوّن على الخريطة، مع سعرها والحد الأدنى للطلب. عيّن المنطقة من «تعديل» في الخريطة، أو حدّد عدة أكشاك واستخدم «تعديل جماعي».'),
+    box,
+    dis ? null : h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+      h('button', { type: 'button', class: 'btn small', onclick: () => add() }, '＋ منطقة'),
+      !(cfg.zones || []).length ? h('button', { type: 'button', class: 'btn small ghost', onclick: () => ZONE_PRESETS.forEach(([name, color]) => add({ name, color })) }, 'أضف VIP / ذهبي / فضي / عادي') : null),
+    h('label', { class: 'check' }, showPrices, 'أظهر أسعار المناطق والحد الأدنى للطلب للزبائن في صفحة الخريطة'),
+    save ? h('div', {}, save) : null);
 }

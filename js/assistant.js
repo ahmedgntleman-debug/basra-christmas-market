@@ -354,7 +354,7 @@ export function openAssistant() {
       ok.disabled = no.disabled = true; ok.textContent = 'جارٍ التنفيذ…';
       try {
         const id = await execute(A);
-        card.querySelector('.preview').replaceChildren(h('span', {}, '✓ تم التنفيذ. '), id ? h('button', { class: 'btn small ghost', onclick: () => { m.close(); openReservation(id); } }, 'عرض الحجز') : null);
+        card.querySelector('.preview').replaceChildren(h('span', {}, '✓ تم التنفيذ. '), id ? h('button', { class: 'btn small ghost', onclick: () => { m.close(); openReservation(id); } }, 'عرض الحجز') : '');
         history = [];
       } catch (e) {
         ok.disabled = no.disabled = false; ok.textContent = 'تأكيد وتنفيذ';

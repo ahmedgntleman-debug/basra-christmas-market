@@ -52,7 +52,8 @@ export function celebrate() { burst(); jingle(0); setTimeout(() => jingle(2), 14
 // ---------- snow ----------
 let snow = null;
 function startSnow(density) {
-  if (snow || !festiveOn()) return;
+  // falling particles across the screen belong to the Christmas market only
+  if (snow || !festiveOn() || themeId() !== 'christmas') return;
   const c = el('canvas', 'fx-snow'); c.setAttribute('aria-hidden', 'true');
   document.body.prepend(c);
   const ctx = c.getContext('2d');
@@ -469,40 +470,97 @@ function soundForTitle(t) {
 
 // ---------- rainbow pointer trail ----------
 let trail = null;
+// each occasion has its own pointer trail
+const TRAIL_OF = { christmas: 'snow', spring: 'rainbow', concert: 'notes', evening: 'notes', valentine: 'hearts', eid_adha: 'eid', eid_fitr: 'eid',
+  national: 'flag', classico: 'ball', worldcup: 'ball', gulf: 'ball', iraq_match: 'ball', summer: 'summer', general: 'confetti' };
+export const trailKind = () => TRAIL_OF[themeId()] || 'confetti';
+const rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
+const FLAG = ['#ce1126', '#ffffff', '#111111', '#007a3d'];
+// particle factories: x,y → particle {vx, vy, g (gravity), life, r, draw(ctx,p,age)}
+const PART = {
+  snow: (x, y) => ({ x: x + rnd(-6, 6), y: y + rnd(-4, 4), vx: rnd(-.5, .5), vy: rnd(.5, 1.3), g: .012, life: rnd(1400, 2200), r: rnd(5, 12), rot: rnd(0, 6.28), vr: rnd(-.04, .04),
+    draw(c, p, k) { c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.globalAlpha = k; c.strokeStyle = '#fff'; c.lineWidth = Math.max(1, p.r / 7); c.lineCap = 'round'; c.shadowColor = 'rgba(160,210,255,.9)'; c.shadowBlur = 6;
+      for (let j = 0; j < 6; j++) { c.rotate(Math.PI / 3); c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -p.r); c.moveTo(0, -p.r * .55); c.lineTo(p.r * .28, -p.r * .78); c.moveTo(0, -p.r * .55); c.lineTo(-p.r * .28, -p.r * .78); c.stroke(); }
+      c.restore(); } }),
+  rainbow: (x, y, hue) => ({ x, y, vx: rnd(-.6, .6), vy: rnd(.3, 1.1), g: 0, life: 900, r: rnd(2, 4.5), h: hue,
+    draw(c, p, k, age) { c.fillStyle = `hsla(${(p.h + age * 120) % 360},95%,60%,${k})`; const r = p.r * (1 - age * .5); c.beginPath(); for (let j = 0; j < 8; j++) { const a = j * Math.PI / 4, rr = j % 2 ? r * .4 : r * 1.6; c.lineTo(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr); } c.closePath(); c.fill(); } }),
+  notes: (x, y) => glyph(x, y, ['♪', '♫', '♬', '♩'], theme().party, -1),
+  hearts: (x, y) => glyph(x, y, ['❤︎', '♥'], ['#ff2d6f', '#ff7aa8', '#e0115f', '#ffc2d6'], -1),
+  eid: (x, y) => glyph(x, y, ['✦', '☾', '★', '✧'], ['#f3d27a', '#e5b94a', '#fff4c9'], .35),
+  flag: (x, y) => glyph(x, y, ['★', '✦'], FLAG.slice(0, 1).concat(['#007a3d', '#ffffff']), .5),
+  ball: (x, y) => ({ x, y, vx: rnd(-1.6, 1.6), vy: rnd(-2.6, -1), g: .14, life: 1500, r: rnd(7, 12), rot: 0, vr: rnd(-.15, .15), bounce: true,
+    draw(c, p, k) { c.save(); c.globalAlpha = k; c.translate(p.x, p.y); c.rotate(p.rot); c.fillStyle = '#fff'; c.strokeStyle = '#222'; c.lineWidth = 1.2;
+      c.beginPath(); c.arc(0, 0, p.r, 0, 6.28); c.fill(); c.stroke(); c.fillStyle = '#222';
+      const pent = (cx, cy, rr) => { c.beginPath(); for (let j = 0; j < 5; j++) { const a = -Math.PI / 2 + j * 2 * Math.PI / 5; c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); } c.closePath(); c.fill(); };
+      pent(0, 0, p.r * .38); for (let j = 0; j < 5; j++) { const a = -Math.PI / 2 + j * 2 * Math.PI / 5; pent(Math.cos(a) * p.r * .86, Math.sin(a) * p.r * .86, p.r * .25); }
+      c.restore(); } }),
+  summer: (x, y) => ({ x, y, vx: rnd(-.4, .4), vy: rnd(-1.4, -.6), g: -.004, life: rnd(1100, 1700), r: rnd(4, 10),
+    draw(c, p, k) { c.globalAlpha = k; c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 1.4; c.fillStyle = 'rgba(120,210,255,.18)'; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 6.28); c.fill(); c.stroke();
+      c.fillStyle = 'rgba(255,255,255,.85)'; c.beginPath(); c.arc(p.x - p.r * .35, p.y - p.r * .35, p.r * .22, 0, 6.28); c.fill(); } }),
+  confetti: (x, y) => ({ x, y, vx: rnd(-1.4, 1.4), vy: rnd(-1.8, -.4), g: .08, life: 1300, r: rnd(3, 6), rot: rnd(0, 6), vr: rnd(-.25, .25), col: pick(theme().party),
+    draw(c, p, k) { c.save(); c.globalAlpha = k; c.translate(p.x, p.y); c.rotate(p.rot); c.fillStyle = p.col; c.fillRect(-p.r, -p.r * .4, p.r * 2, p.r * .8); c.restore(); } }),
+};
+function glyph(x, y, chars, colors, dir) {
+  return { x: x + rnd(-5, 5), y: y + rnd(-5, 5), vx: rnd(-.6, .6), vy: dir < 0 ? rnd(-1.4, -.6) : rnd(.2, .9) * dir, g: dir < 0 ? -.006 : .004, life: rnd(1000, 1600), r: rnd(12, 20),
+    ch: pick(chars), col: pick(colors), rot: rnd(-.4, .4), vr: rnd(-.02, .02),
+    draw(c, p, k, age) { c.save(); c.globalAlpha = k; c.translate(p.x, p.y); c.rotate(p.rot); const sc = .6 + Math.min(1, age * 4) * .4; c.scale(sc, sc);
+      c.font = `700 ${p.r}px "Segoe UI Symbol","Noto Sans Symbols 2","Apple Symbols",sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 4; c.fillStyle = p.col; c.fillText(p.ch, 0, 0); c.restore(); } };
+}
+// colour of the ribbon that follows the pointer
+function lineStyle(kind, i, k, hue) {
+  const C = theme().c;
+  switch (kind) {
+    case 'snow': return [`rgba(235,246,255,${k * .7})`, 1 + k * 5, 'rgba(150,205,255,.9)'];
+    case 'rainbow': return [`hsla(${(hue + i * 9) % 360},95%,58%,${k * .85})`, 1.5 + k * 7];
+    case 'flag': return [hexA(FLAG[Math.floor(i / 3) % 4], k * .85), 2 + k * 6];
+    case 'ball': return [hexA(i % 6 < 3 ? '#2e9e4f' : '#ffffff', k * .8), 1.5 + k * 6];
+    case 'summer': return [`hsla(${35 + (i * 4) % 25},100%,58%,${k * .8})`, 1.5 + k * 7];
+    case 'eid': return [hexA(C.gold, k * .8), 1 + k * 5, C.goldHi || C.gold];
+    case 'hearts': return [`hsla(${335 + (i * 3) % 20},90%,65%,${k * .8})`, 1.5 + k * 6];
+    default: return [hexA(theme().party[i % theme().party.length], k * .8), 1.5 + k * 6];
+  }
+}
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+
 function startTrail() {
   if (trail || reduced || !festiveOn()) return;
-  const c = el('canvas', 'fx-trail'); c.setAttribute('aria-hidden', 'true'); document.body.append(c);
+  const kind = trailKind(), make = PART[kind] || PART.confetti;
+  const c = el('canvas', 'fx-trail'); c.setAttribute('aria-hidden', 'true'); c.dataset.kind = kind; document.body.append(c);
   const ctx = c.getContext('2d');
-  let W, H, pts = [], sparks = [], raf = 0, hue = 0;
+  let W, H, pts = [], parts = [], raf = 0, hue = 0, dist = 0;
   const size = () => { const d = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; c.width = W * d; c.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); };
-  const LIFE = 520;
+  const LIFE = 520, every = { snow: 10, ball: 46, notes: 26, hearts: 24, eid: 18, flag: 20, summer: 22, confetti: 16, rainbow: 14 }[kind] || 20;
   const move = e => {
     if (document.documentElement.classList.contains('fx-off')) return;
     const now = performance.now(), last = pts[pts.length - 1];
     pts.push({ x: e.clientX, y: e.clientY, t: now });
-    if (last && Math.hypot(e.clientX - last.x, e.clientY - last.y) > 14 && Math.random() < .35)
-      sparks.push({ x: e.clientX, y: e.clientY, vx: (Math.random() - .5) * 1.2, vy: Math.random() * .8 + .3, t: now, h: hue, r: 2 + Math.random() * 2.5 });
+    if (last) dist += Math.hypot(e.clientX - last.x, e.clientY - last.y);
+    while (dist > every && parts.length < 140) { dist -= every; const p = make(e.clientX, e.clientY, hue); p.t = now; parts.push(p); }
     if (!raf) raf = requestAnimationFrame(draw);
   };
   const draw = () => {
     const now = performance.now();
-    pts = pts.filter(p => now - p.t < LIFE); sparks = sparks.filter(s => now - s.t < 900);
+    pts = pts.filter(p => now - p.t < LIFE); parts = parts.filter(p => now - p.t < p.life);
     ctx.clearRect(0, 0, W, H);
     hue = (hue + 2.2) % 360;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (let i = 1; i < pts.length; i++) {
-      const a = pts[i - 1], b = pts[i], age = (now - b.t) / LIFE, k = 1 - age;
-      ctx.strokeStyle = `hsla(${(hue + i * 9) % 360}, 95%, 58%, ${k * .85})`;
-      ctx.lineWidth = 1.5 + k * 7;
+      const a = pts[i - 1], b = pts[i], k = 1 - (now - b.t) / LIFE;
+      const [col, w, glow] = lineStyle(kind, i, k, hue);
+      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.shadowBlur = glow ? 8 : 0; ctx.shadowColor = glow || 'transparent';
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
-    for (const s of sparks) {
-      const age = (now - s.t) / 900; s.x += s.vx; s.y += s.vy;
-      ctx.fillStyle = `hsla(${(s.h + age * 120) % 360}, 95%, 60%, ${1 - age})`;
-      const r = s.r * (1 - age * .5);
-      ctx.beginPath(); for (let j = 0; j < 8; j++) { const ang = j * Math.PI / 4, rr = j % 2 ? r * .4 : r * 1.6; ctx.lineTo(s.x + Math.cos(ang) * rr, s.y + Math.sin(ang) * rr); } ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    for (const p of parts) {
+      const age = (now - p.t) / p.life;
+      p.vy += p.g; p.x += p.vx; p.y += p.vy; if (p.vr) p.rot += p.vr;
+      if (kind === 'snow') p.x += Math.sin((now - p.t) / 260 + p.r) * .35;
+      if (p.bounce && p.y > H - p.r) { p.y = H - p.r; p.vy *= -.6; }
+      p.draw(ctx, p, Math.max(0, 1 - age), age);
     }
-    raf = pts.length || sparks.length ? requestAnimationFrame(draw) : 0;
+    ctx.globalAlpha = 1;
+    raf = pts.length || parts.length ? requestAnimationFrame(draw) : 0;
   };
   size(); addEventListener('resize', size); addEventListener('pointermove', move, { passive: true });
   trail = { stop() { cancelAnimationFrame(raf); removeEventListener('resize', size); removeEventListener('pointermove', move); c.remove(); trail = null; } };

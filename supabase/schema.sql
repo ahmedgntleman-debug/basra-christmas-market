@@ -111,6 +111,7 @@ create table if not exists public.kiosks (
   unique (edition_id, code)
 );
 alter table public.kiosks add column if not exists capacity int check (capacity is null or capacity > 0);
+alter table public.kiosks add column if not exists min_spend bigint check (min_spend is null or min_spend >= 0);
 
 -- ---------------------------------------------------------------------
 -- Customers / agencies (shared across all editions)
@@ -159,6 +160,11 @@ create table if not exists public.reservations (
 );
 alter table public.reservations add column if not exists deal_type text not null default 'rental' check (deal_type in ('rental','sponsorship'));
 alter table public.reservations add column if not exists guests int check (guests is null or guests >= 0);
+-- e-ticket: unguessable token in the QR, door check-in
+alter table public.reservations add column if not exists ticket_token uuid not null default gen_random_uuid();
+alter table public.reservations add column if not exists checked_in_at timestamptz;
+alter table public.reservations add column if not exists checked_in_by uuid;
+create unique index if not exists reservations_ticket_token_key on public.reservations(ticket_token);
 create index if not exists reservations_edition_idx on public.reservations(edition_id);
 create index if not exists reservations_customer_idx on public.reservations(customer_id);
 
@@ -552,7 +558,8 @@ begin
                'end_date', e.end_date, 'map_url', e.map_url, 'map_w', e.map_w, 'map_h', e.map_h,
                'contact_phone', e.contact_phone, 'contact_whatsapp', e.contact_whatsapp, 'contacts', e.contacts, 'colors', e.colors,
                'event_type', e.event_type, 'venue', e.venue, 'unit_kind', e.unit_kind, 'logo_url', e.logo_url,
-               'event_time', e.event_time, 'tagline', e.tagline),
+               'event_time', e.event_time, 'tagline', e.tagline,
+               'zones', coalesce(e.settings->'zones', '[]'), 'show_prices', coalesce((e.settings->>'show_prices')::boolean, false)),
     'from', v_from, 'to', v_to,
     'projects', (select coalesce(jsonb_agg(jsonb_build_object('slug', x.slug, 'name', x.name, 'event_type', x.event_type,
         'start_date', x.start_date, 'end_date', x.end_date, 'venue', x.venue, 'unit_kind', x.unit_kind, 'logo_url', x.logo_url)
@@ -560,6 +567,7 @@ begin
         where x.public_enabled and not x.archived and (x.end_date >= public.baghdad_today() or x.id = e.id)),
     'kiosks', coalesce(jsonb_agg(jsonb_build_object(
         'code', k.code, 'grp', k.grp, 'geom', k.geom, 'shape', k.shape, 'capacity', k.capacity,
+        'zone', k.category, 'min_spend', k.min_spend,
         -- held kiosks show as reserved to the public
         'status', case s.status when 'held' then 'reserved' else s.status end)
         order by k.code), '[]'))
@@ -580,6 +588,48 @@ $$;
 -- ---------------------------------------------------------------------
 -- New edition from a previous one (copies layout only — never bookings or payments)
 -- ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------
+-- E-ticket (public by its secret token) and door check-in (staff)
+-- ---------------------------------------------------------------------
+create or replace function public.get_ticket(p_token uuid)
+returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'code', upper(left(replace(r.ticket_token::text, '-', ''), 8)),
+    'status', r.status, 'start_date', r.start_date, 'end_date', r.end_date, 'guests', r.guests,
+    'checked_in_at', r.checked_in_at,
+    'customer', coalesce(c.name, ''),
+    'units', coalesce((select jsonb_agg(jsonb_build_object('code', k.code, 'zone', k.category, 'capacity', k.capacity, 'min_spend', k.min_spend) order by k.code)
+              from reservation_kiosks rk join kiosks k on k.id = rk.kiosk_id where rk.reservation_id = r.id and rk.active), '[]'),
+    'edition', jsonb_build_object('name', e.name, 'slug', e.slug, 'start_date', e.start_date, 'end_date', e.end_date,
+               'event_type', e.event_type, 'venue', e.venue, 'unit_kind', e.unit_kind, 'logo_url', e.logo_url,
+               'event_time', e.event_time, 'tagline', e.tagline, 'zones', coalesce(e.settings->'zones', '[]'),
+               'contacts', e.contacts))
+  from reservations r join editions e on e.id = r.edition_id left join customers c on c.id = r.customer_id
+  where r.ticket_token = p_token
+$$;
+
+create or replace function public.check_in(p_token uuid, p_undo boolean default false)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r reservations; v_prev timestamptz;
+begin
+  if not public.has_role('super_admin','reservations','finance') then
+    raise exception 'تسجيل الدخول عند الباب للموظفين فقط' using errcode = '42501';
+  end if;
+  select * into r from reservations where ticket_token = p_token for update;
+  if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  if r.status = 'cancelled' then return jsonb_build_object('ok', false, 'reason', 'cancelled'); end if;
+  v_prev := r.checked_in_at;
+  if p_undo then
+    update reservations set checked_in_at = null, checked_in_by = null where id = r.id;
+    return jsonb_build_object('ok', true, 'undone', true);
+  end if;
+  if v_prev is not null then return jsonb_build_object('ok', false, 'reason', 'already', 'at', v_prev); end if;
+  update reservations set checked_in_at = now(), checked_in_by = auth.uid() where id = r.id;
+  return jsonb_build_object('ok', true, 'at', now(), 'id', r.id);
+end $$;
+
 create or replace function public.clone_edition(p_source uuid, p jsonb) returns uuid
 language plpgsql security invoker set search_path = public as $$
 declare s editions; v_new uuid;
@@ -589,7 +639,7 @@ begin
   end if;
   select * into s from editions where id = p_source;
   insert into editions(slug, name, start_date, end_date, map_url, map_w, map_h,
-                       contact_phone, contact_whatsapp, contacts, colors, event_type, venue, unit_kind, logo_url, event_time, tagline)
+                       contact_phone, contact_whatsapp, contacts, colors, event_type, venue, unit_kind, logo_url, event_time, tagline, public_enabled)
   values (p->>'slug', p->>'name', (p->>'start_date')::date, (p->>'end_date')::date,
           case when coalesce((p->>'copy_map')::boolean, true) then s.map_url else 'map.jpg' end,
           s.map_w, s.map_h,
@@ -598,15 +648,16 @@ begin
                else '{"available":"#2e8b57","reserved":"#c0392b","held":"#e67e22","partial":"#f1c40f","disabled":"#9e9e9e"}'::jsonb end,
           coalesce(nullif(p->>'event_type',''), s.event_type), coalesce(nullif(p->>'venue',''), s.venue),
           coalesce(nullif(p->>'unit_kind',''), s.unit_kind),
-          case when coalesce((p->>'copy_branding')::boolean, true) then s.logo_url end, s.event_time, s.tagline)
+          case when coalesce((p->>'copy_branding')::boolean, true) then s.logo_url end, s.event_time, s.tagline,
+          coalesce((p->>'public_enabled')::boolean, false))
   returning id into v_new;
 
   if coalesce((p->>'copy_kiosks')::boolean, true) then
-    insert into kiosks(edition_id, code, grp, category, zone, geom, shape, rentable, active, needs_verify, note, list_price, capacity)
+    insert into kiosks(edition_id, code, grp, category, zone, geom, shape, rentable, active, needs_verify, note, list_price, capacity, min_spend)
     select v_new, code, grp,
            case when coalesce((p->>'copy_categories')::boolean, true) then category end,
            zone, geom, shape, rentable, active, false, note,
-           case when coalesce((p->>'copy_prices')::boolean, false) then list_price end, capacity
+           case when coalesce((p->>'copy_prices')::boolean, false) then list_price end, capacity, min_spend
     from kiosks where edition_id = p_source;
   end if;
   return v_new;
@@ -709,6 +760,8 @@ revoke all on public.reservation_summary from anon;
 revoke all on public.payment_list from anon;
 revoke execute on all functions in schema public from anon, public;
 grant execute on function public.get_public_map(text, date, date) to anon, authenticated;
+grant execute on function public.get_ticket(uuid) to anon, authenticated;
+grant execute on function public.check_in(uuid, boolean) to authenticated;
 grant execute on function public.app_role(), public.has_role(text[]), public.baghdad_today(),
   public.create_reservation(jsonb), public.set_reservation_kiosks(uuid, uuid[]),
   public.release_expired_holds(), public.kiosk_status(uuid, date, date),
@@ -845,3 +898,27 @@ begin
 end $$;
 revoke execute on function public.delete_kiosk(uuid) from anon, public;
 grant execute on function public.delete_kiosk(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Delete a whole project (super admin, must type the project name)
+-- Removes its map, kiosks/tables, bookings, payments, schedules, contracts, daily figures and P&L entries.
+-- Customers stay (they can belong to other projects).
+-- ---------------------------------------------------------------------
+create or replace function public.delete_edition(p_edition uuid, p_confirm text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare e editions; v_res int; v_pay int;
+begin
+  if not public.has_role('super_admin') then raise exception 'حذف المشاريع للمدير العام فقط' using errcode = '42501'; end if;
+  select * into e from editions where id = p_edition;
+  if e.id is null then raise exception 'المشروع غير موجود'; end if;
+  if trim(coalesce(p_confirm, '')) <> trim(e.name) then raise exception 'اكتب اسم المشروع كما هو لتأكيد الحذف'; end if;
+  select count(*) into v_res from reservations where edition_id = e.id;
+  select count(*) into v_pay from payments p join reservations r on r.id = p.reservation_id where r.edition_id = e.id;
+  delete from payments where reservation_id in (select id from reservations where edition_id = e.id);
+  delete from reservation_kiosks where reservation_id in (select id from reservations where edition_id = e.id);
+  delete from reservations where edition_id = e.id;
+  delete from editions where id = e.id;   -- kiosks, daily figures and ledger go with it
+  return jsonb_build_object('name', e.name, 'reservations', v_res, 'payments', v_pay);
+end $$;
+revoke execute on function public.delete_edition(uuid, text) from anon, public;
+grant execute on function public.delete_edition(uuid, text) to authenticated;

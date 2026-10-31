@@ -63,6 +63,7 @@ export class MapView {
     this.render();
   }
   setKiosks(list) { this.kiosks = list; this.render(); }
+  setZones(zones) { this.zoneColors = new Map((zones || []).filter(z => z.name && z.color).map(z => [z.name, z.color])); if (this.kiosks) this.render(); }
   setStatuses(map) { this.statuses = map; this.paint(); }
   setColors(c) { this.colors = c || {}; this.paint(); }
   setMode(m) { this.mode = m; this.svg.style.cursor = m === 'add' || m === 'draw' ? 'crosshair' : ''; this.drawEditHandles(); }
@@ -97,13 +98,16 @@ export class MapView {
     else if (k.shape === 'ellipse') shape = s('ellipse', { rx: p.w / 2, ry: p.h / 2 });
     else shape = s('rect', { x: -p.w / 2, y: -p.h / 2, width: p.w, height: p.h, rx: Math.min(p.w, p.h) * 0.08 });
     shape.setAttribute('class', 'shape');
+    const zc = this.zoneColors?.get(k.zone ?? k.category);
+    let ring = null;
+    if (zc) { ring = shape.cloneNode(); ring.setAttribute('class', 'zone-ring'); ring.setAttribute('stroke', zc); ring.setAttribute('fill', 'none'); g.dataset.zone = k.zone ?? k.category; }
     const fs = Math.max(4, Math.min(Math.min(p.w, p.h) * 0.52, 14));
     const t = s('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': fs });
     if (p.h > p.w * 1.3) t.setAttribute('transform', 'rotate(90)');
     if (k.shape === 'triangle') t.setAttribute('y', p.h * 0.12);
     t.textContent = k.code;
-    const title = s('title'); title.textContent = k.code + (k.capacity ? ` · 👥 ${k.capacity}` : '');
-    g.append(shape, t, title);
+    const title = s('title'); title.textContent = k.code + (zc ? ` · ${k.zone ?? k.category}` : '') + (k.capacity ? ` · 👥 ${k.capacity}` : '');
+    g.append(shape, ...(ring ? [ring] : []), t, title);
     if (k.capacity && Math.min(p.w, p.h) > 16) {
       t.setAttribute('y', -fs * .35);
       const c = s('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': fs * .72, y: fs * .62, class: 'cap' });
