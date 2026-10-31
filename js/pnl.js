@@ -1,6 +1,6 @@
 // Profit & Loss: revenue from kiosk rent and sponsorship (from reservations),
 // daily income by source, daily expenses and operating expenses (from the ledger).
-import { sb, h, $, toast, errText, money, fmtNum, fmtDate, fmtDateLong, fmtDateTime, todayISO, addDays, daysBetween, parseAmount, modal, confirmBox, esc } from './common.js';
+import { sb, h, $, toast, errText, money, fmtNum, fmtDate, fmtDateLong, fmtDateTime, todayISO, addDays, daysBetween, parseAmount, modal, confirmBox, esc, exportRows } from './common.js';
 import { S, can, refresh } from './state.js';
 import { field } from './booking.js';
 import { printLogo, THEMES } from './themes.js';
@@ -22,9 +22,10 @@ const overlap = (s1, e1, s2, e2) => { const s = s1 > s2 ? s1 : s2, e = e1 < e2 ?
 const inRange = (d, from, to) => (!from || d >= from) && (!to || d <= to);
 const sum = (a, f = x => x) => a.reduce((t, x) => t + (f(x) || 0), 0);
 
-export function computePnl({ from = null, to = null, basis = 'accrual' } = {}) {
-  const E = S.edition;
-  const live = S.reservations.filter(r => r.status !== 'cancelled');
+// D: one project's data (defaults to the open project) — every project's P&L stays separate
+export function computePnl({ from = null, to = null, basis = 'accrual' } = {}, D = { E: S.edition, reservations: S.reservations, payments: S.payments, ledger: S.ledger, daily: S.daily }) {
+  const E = D.E;
+  const live = D.reservations.filter(r => r.status !== 'cancelled');
   const byDay = new Map();
   const day = d => { if (!byDay.has(d)) byDay.set(d, { day: d, contracts: 0, rental: 0, sponsor: 0, income: 0, other: 0, dexp: 0, opex: 0, visitors: null }); return byDay.get(d); };
   // festival days always listed (within range)
@@ -45,9 +46,9 @@ export function computePnl({ from = null, to = null, basis = 'accrual' } = {}) {
       }
     }
   } else {
-    const resById = new Map(S.reservations.map(r => [r.id, r]));
+    const resById = new Map(D.reservations.map(r => [r.id, r]));
     const seenR = new Set(), seenS = new Set();
-    for (const p of S.payments) {
+    for (const p of D.payments) {
       if (!inRange(p.paid_on, from, to)) continue;
       const r = resById.get(p.reservation_id); const sp = r?.deal_type === 'sponsorship';
       if (sp) { sponsor += p.amount; seenS.add(p.reservation_id); } else { rental += p.amount; seenR.add(p.reservation_id); }
@@ -56,7 +57,7 @@ export function computePnl({ from = null, to = null, basis = 'accrual' } = {}) {
     rentalN = seenR.size; sponsorN = seenS.size;
   }
 
-  const L = S.ledger.filter(e => inRange(e.day, from, to));
+  const L = D.ledger.filter(e => inRange(e.day, from, to));
   const cats = { daily_income: new Map(), other_income: new Map(), daily_expense: new Map(), operating_expense: new Map() };
   const addCat = (k, c, v) => cats[k].set(c, (cats[k].get(c) || 0) + v);
   const ledgerIncomeDays = new Set(L.filter(e => e.kind === 'daily_income').map(e => e.day));
@@ -70,7 +71,7 @@ export function computePnl({ from = null, to = null, basis = 'accrual' } = {}) {
   }
   // days logged only as one total in the daily log count as "unsplit" daily income
   let visitors = 0, visitorDays = 0;
-  for (const d of S.daily) {
+  for (const d of D.daily) {
     if (!inRange(d.day, from, to)) continue;
     if (d.visitors != null) { visitors += d.visitors; visitorDays++; day(d.day).visitors = d.visitors; }
     if (d.income && !ledgerIncomeDays.has(d.day)) { addCat('daily_income', UNSPLIT, d.income); day(d.day).income += d.income; }
@@ -89,7 +90,7 @@ export function computePnl({ from = null, to = null, basis = 'accrual' } = {}) {
   }
   const festDays = days.filter(x => x.day >= E.start_date && x.day <= E.end_date);
   const sorted = (k) => [...cats[k].entries()].sort((a, b) => b[1] - a[1]);
-  const contracted = sum(live, r => r.total), collected = sum(S.reservations, r => r.paid);
+  const contracted = sum(live, r => r.total), collected = sum(D.reservations, r => r.paid);
   const best = festDays.filter(x => x.rev || x.exp).sort((a, b) => b.net - a.net);
   return {
     from, to, basis, rental, sponsor, rentalN, sponsorN, dailyIncome, otherIncome, revenue, dexp, opex, expenses, gross, net,
@@ -212,7 +213,7 @@ export function pagePnl(root) {
     if (tab === 'entries') drawEntries(body, getRange()); else drawReport(body, P);
   }
   drawTabs(); draw();
-  root.replaceChildren(bar, tabs, body);
+  root.replaceChildren(bar, tabs, body, S.editions.length > 1 ? allProjectsSection() : '');
   root._refresh = draw;
 }
 
@@ -581,4 +582,48 @@ ${dayRows.length ? `<h2>الإيرادات والمصاريف يوماً بيو�
 <footer><span>${(E.event_type || 'christmas') === 'christmas' ? "Market Christmas — Santa's Factory · " : ''}Horizon Basra</span><span>${esc(E.name)}</span></footer>
 </div></body></html>`);
   w.document.close();
+}
+
+// ---------------- every project side by side (each one computed from its own data only) ----------------
+export async function loadAllPnl(basis = 'accrual') {
+  const eds = [...S.editions].sort((a, b) => b.start_date.localeCompare(a.start_date));
+  const [r, p, l, d] = await Promise.all([
+    sb.from('reservation_summary').select('id,edition_id,status,total,paid,remaining,days,start_date,end_date,deal_type'),
+    sb.from('payment_list').select('reservation_id,edition_id,amount,paid_on'),
+    sb.from('ledger').select('edition_id,day,kind,category,amount'),
+    sb.from('daily_stats').select('edition_id,day,visitors,income'),
+  ]);
+  for (const x of [r, p, l, d]) if (x.error) throw x.error;
+  const by = (rows, id) => (rows || []).filter(x => x.edition_id === id);
+  return eds.map(E => ({ E, P: computePnl({ basis }, { E, reservations: by(r.data, E.id), payments: by(p.data, E.id), ledger: by(l.data, E.id), daily: by(d.data, E.id) }) }));
+}
+
+export function allProjectsSection() {
+  const box = h('div', { class: 'pl-all' }, h('p', { class: 'hint' }, 'اضغط «عرض» لمقارنة الأرباح والخسائر لكل المشاريع، الجارية والمنتهية. كل مشروع يُحسب من بياناته فقط.'));
+  let basis = 'accrual', rows = null;
+  const show = async () => {
+    box.replaceChildren(h('div', { class: 'spinner' }));
+    try { rows = await loadAllPnl(basis); } catch (e) { box.replaceChildren(h('p', { class: 'warnbox' }, errText(e))); return; }
+    const T = k => rows.reduce((a, x) => a + (x.P[k] || 0), 0);
+    const tr = (E, P, cls = '') => h('tr', { class: cls },
+      h('td', {}, E ? h('strong', {}, E.name) : 'المجموع', E ? h('div', { class: 'hint' }, `${E.start_date === E.end_date ? fmtDate(E.start_date) : fmtDate(E.start_date) + ' – ' + fmtDate(E.end_date)}${E.archived ? ' · مؤرشف' : E.end_date < todayISO() ? ' · منتهٍ' : ''}`) : null),
+      ...['rental', 'sponsor', 'dailyIncome', 'otherIncome', 'revenue', 'dexp', 'opex', 'expenses', 'net'].map(k => h('td', { class: 'money' + (k === 'net' && P[k] < 0 ? ' neg' : '') }, h('span', { class: 'num' }, k === 'net' ? signed(Math.round(P[k])) : fmtNum(Math.round(P[k]))))),
+      h('td', { class: 'money' }, h('span', { class: 'num' }, fmtNum(Math.round(P.receivable)))),
+      h('td', { class: 'money' }, h('span', { class: 'num' }, fmtNum(P.visitors))));
+    const tot = { rental: T('rental'), sponsor: T('sponsor'), dailyIncome: T('dailyIncome'), otherIncome: T('otherIncome'), revenue: T('revenue'), dexp: T('dexp'), opex: T('opex'), expenses: T('expenses'), net: T('net'), receivable: T('receivable'), visitors: T('visitors') };
+    box.replaceChildren(
+      h('div', { class: 'table-wrap' }, h('table', { class: 't pl-allt' },
+        h('thead', {}, h('tr', {}, ['المشروع', 'الإيجار', 'الرعاية', 'إيراد يومي', 'إيراد آخر', 'إجمالي الإيرادات', 'مصاريف يومية', 'مصاريف تشغيلية', 'إجمالي المصاريف', 'صافي الربح', 'مستحقات', 'الزوار'].map(t => h('th', {}, t)))),
+        h('tbody', {}, rows.map(x => tr(x.E, x.P))),
+        rows.length > 1 ? h('tfoot', {}, tr(null, tot, 'pl-grand')) : null)),
+      h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+        h('button', { class: 'btn', onclick: () => exportRows(rows.map(({ E, P }) => ({ ...P, name: E.name, start: E.start_date, end: E.end_date, status: E.archived ? 'مؤرشف' : E.end_date < todayISO() ? 'منتهٍ' : 'جارٍ' })), [
+          { label: 'المشروع', value: x => x.name }, { label: 'من', value: x => x.start }, { label: 'إلى', value: x => x.end }, { label: 'الحالة', value: x => x.status },
+          { label: 'الإيجار', value: x => Math.round(x.rental) }, { label: 'الرعاية', value: x => Math.round(x.sponsor) }, { label: 'إيراد يومي', value: x => x.dailyIncome }, { label: 'إيراد آخر', value: x => x.otherIncome },
+          { label: 'إجمالي الإيرادات', value: x => Math.round(x.revenue) }, { label: 'مصاريف يومية', value: x => x.dexp }, { label: 'مصاريف تشغيلية', value: x => x.opex }, { label: 'إجمالي المصاريف', value: x => x.expenses },
+          { label: 'صافي الربح', value: x => Math.round(x.net) }, { label: 'مستحقات غير محصلة', value: x => Math.round(x.receivable) }, { label: 'الزوار', value: x => x.visitors }], `P&L-all-projects-${todayISO()}`) }, '⬇ تصدير Excel'),
+        h('button', { class: 'btn ghost', onclick: () => { basis = basis === 'accrual' ? 'cash' : 'accrual'; show(); } }, basis === 'accrual' ? 'احسب حسب المحصّل فعلياً' : 'احسب حسب قيمة العقود')),
+      h('p', { class: 'hint', style: { margin: 0 } }, basisLabel(basis) + '. بيانات كل مشروع تبقى محفوظة بعد انتهائه، وتفتحها من قائمة المشاريع في الأعلى.'));
+  };
+  return h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, 'الأرباح والخسائر لكل المشاريع'), h('button', { class: 'btn small primary', onclick: show }, 'عرض')), box);
 }

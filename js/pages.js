@@ -149,7 +149,7 @@ export function pageCustomers(root) {
 
 // ================= reports =================
 const TABS = [
-  ['visitors', 'الزوار والإيراد اليومي'], ['outstanding', 'المبالغ المتبقية'], ['payments', 'الدفعات'], ['daily', 'التحصيل اليومي'], ['availability', 'توفر الأكشاك'],
+  ['visitors', 'الزوار والإيراد اليومي'], ['people', 'العملاء والحاجزون'], ['outstanding', 'المبالغ المتبقية'], ['payments', 'الدفعات'], ['daily', 'التحصيل اليومي'], ['availability', 'توفر الأكشاك'],
   ['reservations', 'الحجوزات حسب الفترة'], ['editions', 'مقارنة النسخ'], ['log', 'سجل النشاط'],
 ];
 export function pageReports(root) {
@@ -160,7 +160,7 @@ export function pageReports(root) {
   if (!adv && ['reservations', 'editions'].includes(tab)) tab = 'outstanding';
   const drawTabs = () => tabs.replaceChildren(...TABS.filter(([k]) => (k !== 'log' || can.admin()) && (adv || !['reservations', 'editions'].includes(k))).map(([k, l]) =>
     h('button', { role: 'tab', 'aria-selected': k === tab, onclick: () => { tab = k; sessionStorage.setItem('bcm.rtab', k); drawTabs(); draw(); } }, l)));
-  const draw = () => ({ visitors: rVisitors, outstanding: rOutstanding, payments: rPayments, daily: rDaily, availability: rAvailability, reservations: rReservations, editions: rEditions, log: rLog }[tab] || rOutstanding)(body);
+  const draw = () => ({ visitors: rVisitors, people: rPeople, outstanding: rOutstanding, payments: rPayments, daily: rDaily, availability: rAvailability, reservations: rReservations, editions: rEditions, log: rLog }[tab] || rOutstanding)(body);
   drawTabs(); draw();
   root.replaceChildren(tabs, body);
   root._refresh = draw;
@@ -696,4 +696,67 @@ function zonesSection(sec, E, cfg, dis, saveEdition) {
       !(cfg.zones || []).length ? h('button', { type: 'button', class: 'btn small ghost', onclick: () => ZONE_PRESETS.forEach(([name, color]) => add({ name, color })) }, 'أضف VIP / ذهبي / فضي / عادي') : null),
     h('label', { class: 'check' }, showPrices, 'أظهر أسعار المناطق والحد الأدنى للطلب للزبائن في صفحة الخريطة'),
     save ? h('div', {}, save) : null);
+}
+
+// ---- customers & bookers across all projects (kept after a project ends) ----
+function rPeople(el) {
+  el.replaceChildren(h('div', { class: 'spinner' }));
+  Promise.all([
+    sb.from('customers').select('*').order('name'),
+    sb.from('reservation_summary').select('id,edition_id,customer_id,customer_name,status,start_date,end_date,kiosk_codes,guests,total,paid,remaining,deal_type,checked_in_at,created_at').order('start_date', { ascending: false }),
+  ]).then(([c, r]) => {
+    if (c.error || r.error) return el.replaceChildren(h('p', { class: 'warnbox' }, errText(c.error || r.error)));
+    const custs = c.data || [], res = r.data || [];
+    const edName = id => S.editions.find(e => e.id === id)?.name || 'مشروع محذوف';
+    const proj = h('select', { class: 'in' }, h('option', { value: '' }, 'كل المشاريع'), [...S.editions].sort((a, b) => b.start_date.localeCompare(a.start_date)).map(e => h('option', { value: e.id, selected: e.id === S.edition.id }, e.name + (e.archived ? ' (أرشيف)' : ''))));
+    const view = h('select', { class: 'in' }, h('option', { value: 'cust' }, 'حسب العميل'), h('option', { value: 'res' }, 'كل حجز في سطر'));
+    const stat = h('select', { class: 'in' }, h('option', { value: 'live' }, 'الحجوزات القائمة'), h('option', { value: 'all' }, 'مع الملغاة'), h('option', { value: 'cancelled' }, 'الملغاة فقط'));
+    const q = h('input', { class: 'in', type: 'search', placeholder: 'بحث بالاسم أو الشركة أو الهاتف' });
+    const out = h('div');
+    const match = (...v) => { const t = q.value.trim().toLowerCase(); return !t || v.some(x => String(x || '').toLowerCase().includes(t)); };
+    const cById = new Map(custs.map(x => [x.id, x]));
+    const resRows = () => res.filter(x => (!proj.value || x.edition_id === proj.value) && (stat.value === 'all' || (stat.value === 'cancelled' ? x.status === 'cancelled' : x.status !== 'cancelled')))
+      .filter(x => { const cu = cById.get(x.customer_id) || {}; return match(x.customer_name, cu.company, cu.phone, cu.phone2, x.kiosk_codes.join(' ')); });
+    const RES_COLS = [
+      { label: 'المشروع', value: x => edName(x.edition_id) }, { label: 'العميل', value: x => x.customer_name || 'حجز مؤقت' },
+      { label: 'الشركة', value: x => cById.get(x.customer_id)?.company || '' }, { label: 'الهاتف', value: x => cById.get(x.customer_id)?.phone || '' },
+      { label: 'الأكشاك', value: x => x.kiosk_codes.join('، ') }, { label: 'من', value: x => fmtDate(x.start_date) }, { label: 'إلى', value: x => fmtDate(x.end_date) },
+      { label: 'الأشخاص', value: x => x.guests ?? '' }, { label: 'النوع', value: x => x.deal_type === 'sponsorship' ? 'رعاية' : 'إيجار' },
+      { label: 'المبلغ', value: x => x.total ?? 'غير محدد', money: true, sum: true }, { label: 'المدفوع', value: x => x.paid, money: true, sum: true },
+      { label: 'المتبقي', value: x => x.remaining ?? 'غير محدد', money: true, sum: true },
+      { label: 'الحالة', value: x => RES_LABEL[x.status] || x.status }, { label: 'الدخول', value: x => x.checked_in_at ? fmtDateTime(x.checked_in_at) : '' },
+    ];
+    const custRows = () => {
+      const rs = resRows(), m = new Map();
+      for (const x of rs) {
+        if (!x.customer_id) continue;
+        const a = m.get(x.customer_id) || { n: 0, eds: new Set(), kiosks: new Set(), total: 0, paid: 0, remaining: 0, guests: 0, last: '' };
+        a.n++; a.eds.add(edName(x.edition_id)); x.kiosk_codes.forEach(k => a.kiosks.add(k)); a.total += x.total || 0; a.paid += x.paid || 0;
+        a.remaining += Math.max(0, x.remaining || 0); a.guests += x.guests || 0; if (x.start_date > a.last) a.last = x.start_date;
+        m.set(x.customer_id, a);
+      }
+      // with "all projects" every saved customer is listed, even with no booking left
+      const base = proj.value ? custs.filter(cu => m.has(cu.id)) : custs;
+      return base.filter(cu => m.has(cu.id) || match(cu.name, cu.company, cu.phone, cu.phone2)).map(cu => ({ ...cu, a: m.get(cu.id) || { n: 0, eds: new Set(), kiosks: new Set(), total: 0, paid: 0, remaining: 0, guests: 0, last: '' } }))
+        .sort((x, y) => y.a.total - x.a.total || x.name.localeCompare(y.name));
+    };
+    const CUST_COLS = [
+      { label: 'العميل', value: x => x.name }, { label: 'الشركة', value: x => x.company || '' }, { label: 'المسؤول', value: x => x.contact_person || '' },
+      { label: 'الهاتف', value: x => x.phone || '' }, { label: 'هاتف ثانٍ', value: x => x.phone2 || '' }, { label: 'البريد', value: x => x.email || '' }, { label: 'الفئة', value: x => x.category || '' },
+      { label: 'المشاريع', value: x => [...x.a.eds].join('، ') }, { label: 'عدد الحجوزات', value: x => x.a.n, sum: true }, { label: 'الأكشاك', value: x => [...x.a.kiosks].join('، ') },
+      { label: 'الأشخاص', value: x => x.a.guests || '', sum: true },
+      { label: 'إجمالي العقود', value: x => x.a.total, money: true, sum: true }, { label: 'المدفوع', value: x => x.a.paid, money: true, sum: true },
+      { label: 'المتبقي', value: x => x.a.remaining, money: true, sum: true }, { label: 'آخر حجز', value: x => x.a.last ? fmtDate(x.a.last) : '' },
+    ];
+    const draw = () => {
+      const byC = view.value === 'cust', list = byC ? custRows() : resRows(), cols = byC ? CUST_COLS : RES_COLS;
+      const name = `customers-${proj.value ? S.editions.find(e => e.id === proj.value)?.slug : 'all-projects'}`;
+      out.replaceChildren(h('div', { class: 'pagebar' }, h('p', { class: 'hint', style: { margin: 0 } }, `${list.length} ${byC ? 'عميل' : 'حجز'}`), exportBar(() => byC ? custRows() : resRows(), cols, name, 'العملاء والحاجزون')),
+        reportTable(list, cols, x => byC ? openCustomer(x.id) : (x.edition_id === S.edition.id ? openReservation(x.id) : toast('هذا الحجز في مشروع «' + edName(x.edition_id) + '». افتح المشروع لعرض تفاصيله.'))));
+    };
+    [proj, view, stat].forEach(x => x.onchange = draw); q.oninput = draw;
+    el.replaceChildren(h('div', { class: 'pagebar', style: { flexWrap: 'wrap' } }, proj, view, stat, q),
+      h('p', { class: 'hint', style: { margin: 0 } }, 'العملاء محفوظون دائماً، حتى بعد انتهاء المشروع أو أرشفته. اختر «كل المشاريع» لعرض كل العملاء وسحبهم في ملف Excel.'), out);
+    draw();
+  });
 }
