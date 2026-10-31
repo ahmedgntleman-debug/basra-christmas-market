@@ -11,8 +11,9 @@ import { openAssistant, assistantReady } from './assistant.js';
 import { pagePnl } from './pnl.js';
 import { applyTheme, logoNode, rememberedBrand, theme, THEMES } from './themes.js';
 import { openNewProject } from './projects.js';
+import { loginEmail } from './staff.js';
 import { pageCheckin } from './checkin.js';
-import { applyProject, unitOf, isActive, zones, zoneOf, minSpendOf } from './state.js';
+import { applyProject, unitOf, isActive, zones, zoneOf, minSpendOf, roleLabel } from './state.js';
 import { startI18n } from './i18n.js';
 import { initFestive, garland, baubles, countdown, tree, toggleButton, soundButton, soundOn, festiveOn, burst, jingle, sleigh } from './festive.js';
 
@@ -41,6 +42,7 @@ async function boot() {
     if (error) throw error;
     S.profile = prof;
     if (!prof) throw new Error('لم يتم إنشاء ملف المستخدم. تأكد من تشغيل ملف قاعدة البيانات schema.sql قبل إنشاء الحساب.');
+    if (prof.active === false) { await sb.auth.signOut(); throw new Error('هذا الحساب موقوف. راجع المدير العام.'); }
     sb.rpc('release_expired_holds').then(() => {});
     await loadEditions();
     await loadEditionData();
@@ -84,7 +86,7 @@ function showLogin() {
     e.preventDefault();
     const btn = $('button', form); btn.disabled = true;
     $('#login-msg').textContent = '';
-    const { error } = await sb.auth.signInWithPassword({ email: form.email.value.trim(), password: form.password.value });
+    const { error } = await sb.auth.signInWithPassword({ email: loginEmail(form.email.value), password: form.password.value });
     btn.disabled = false;
     if (error) { $('#login-msg').textContent = errText(error); return; }
     location.reload();
@@ -93,7 +95,9 @@ function showLogin() {
 
 function shell() {
   const pl = $('.nav a[href="#/pnl"]'); if (pl) pl.hidden = !can.pnl();
-  const ck = $('.nav a[href="#/checkin"]'); if (ck) ck.hidden = !can.pay();
+  const ck = $('.nav a[href="#/checkin"]'); if (ck) ck.hidden = !can.checkin();
+  const rp = $('.nav a[href="#/reports"]'); if (rp) rp.hidden = !can.reports();
+  const cu = $('.nav a[href="#/customers"]'); if (cu) cu.hidden = !can.customers();
   garland($('.top'));
   sleigh({ first: 9000, every: [40000, 80000], when: () => !document.querySelector('.scrim') && /^#?\/?$/.test(location.hash) });
   $('.nav .foot').prepend(toggleButton(), soundButton());
@@ -103,7 +107,7 @@ function shell() {
   ref.before(mini(festiveOn() ? '❄' : '☁', 'الزينة', () => $('.nav .foot .fx-toggle').click()), mini(soundOn() ? '🔔' : '🔕', 'الأصوات', () => $$('.nav .foot .fx-toggle')[1].click()));
   const paintLogo = () => { const n = logoNode(S.edition, 'nav'); n.onclick = e => { jingle(); burst(e.clientX, e.clientY, 16); }; $('#nav-logo').replaceChildren(n); };
   paintLogo(); onChange(paintLogo);
-  $('#who').textContent = (S.profile.full_name || S.user.email) + ' — ' + ROLE_LABEL[S.profile.role];
+  $('#who').textContent = (S.profile.full_name || S.profile.username || S.user.email) + ' — ' + roleLabel();
   $('#logout').onclick = async () => { await sb.auth.signOut(); location.hash = ''; location.reload(); };
   const sel = $('#edition');
   const fill = () => {
@@ -116,7 +120,7 @@ function shell() {
   };
   fill();
   sel.onchange = () => switchEdition(sel.value);
-  if (can.admin()) { const nb = h('button', { class: 'btn small primary np-btn', type: 'button', title: 'مشروع جديد' }, '＋ مشروع جديد'); nb.onclick = openNewProject; sel.after(nb); }
+  if (can.projects()) { const nb = h('button', { class: 'btn small primary np-btn', type: 'button', title: 'مشروع جديد' }, '＋ مشروع جديد'); nb.onclick = openNewProject; sel.after(nb); }
   onChange(fill);
   const ab = $('#assist');
   const showAssist = () => { ab.hidden = !assistantReady(); };
@@ -128,7 +132,8 @@ function shell() {
 
 function render(full) {
   const key = location.hash.replace(/^#\/?/, '').split('?')[0];
-  const r = (key === 'pnl' && !can.pnl() ? null : ROUTES[key]) || ROUTES[''];
+  const blocked = { pnl: !can.pnl(), checkin: !can.checkin(), reports: !can.reports(), customers: !can.customers() };
+  const r = (blocked[key] ? null : ROUTES[key]) || ROUTES[''];
   $$('.nav a').forEach(a => a.setAttribute('aria-current', a.getAttribute('href') === '#/' + key ? 'page' : 'false'));
   $('#page-title').textContent = r.title;
   document.title = r.title + ' — ' + (S.edition?.name || '');
@@ -142,7 +147,7 @@ function render(full) {
 
 function noEdition() {
   return h('div', { class: 'empty' }, h('strong', {}, 'لا يوجد مشروع بعد'),
-    'أنشئ أول مشروع (حفل، مباراة، مهرجان…) وارفع خريطته.', can.admin() ? h('button', { class: 'btn primary', onclick: openNewProject }, '✨ مشروع جديد') : null);
+    'أنشئ أول مشروع (حفل، مباراة، مهرجان…) وارفع خريطته.', can.projects() ? h('button', { class: 'btn primary', onclick: openNewProject }, '✨ مشروع جديد') : null);
 }
 
 // ================= dashboard =================
@@ -312,11 +317,11 @@ function pageMap(root) {
   const groups = [...new Set(S.kiosks.map(k => k.grp).filter(Boolean))].sort();
   const grpSel = h('select', { class: 'in', 'aria-label': 'المجموعة' }, h('option', { value: '' }, 'كل المجموعات'), groups.map(g => h('option', { value: g }, 'أكشاك ' + g)));
   const multiBtn = h('button', { class: 'btn', 'aria-pressed': 'false' }, 'تحديد عدة أكشاك');
-  const editBtn = can.admin() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, 'تحرير الخريطة') : null;
+  const editBtn = can.mapEdit() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, 'تحرير الخريطة') : null;
   const areaBtn = can.book() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, 'حجز مساحة') : null;
   const exportBtn = h('button', { class: 'btn' }, 'تصدير الخريطة');
-  const addBtn = can.admin() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, '＋ إضافة كشك') : null;
-  const delBtn = can.admin() ? h('button', { class: 'btn danger', 'aria-pressed': 'false' }, '－ حذف كشك') : null;
+  const addBtn = can.mapEdit() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, '＋ إضافة كشك') : null;
+  const delBtn = can.mapEdit() ? h('button', { class: 'btn danger', 'aria-pressed': 'false' }, '－ حذف كشك') : null;
   const swapBtn = can.book() ? h('button', { class: 'btn', 'aria-pressed': 'false' }, '⇄ تبديل كشكين') : null;
   let tool = '', swapA = null;
   const legend = h('div', { class: 'legend' });
@@ -498,7 +503,7 @@ function pageMap(root) {
       h('div', { class: 'swap-grid' }, side(a), h('div', { class: 'swap-arrow', 'aria-hidden': 'true' }, '⇄'), side(b)),
       h('label', { class: 'check swap-opt' }, modeB, h('span', {}, h('b', {}, 'تبديل الحجوزات بين الكشكين'), h('br'),
         h('span', { class: 'hint' }, `كل حجز على ${a.code} ينتقل إلى ${b.code} والعكس، مع دفعاته ومبالغه كما هي. استخدمه عندما يتبادل مشاركان مكانيهما.`))),
-      can.admin() ? h('label', { class: 'check swap-opt' }, modeP, h('span', {}, h('b', {}, 'تبديل مكان الكشكين على الخريطة'), h('br'),
+      can.mapEdit() ? h('label', { class: 'check swap-opt' }, modeP, h('span', {}, h('b', {}, 'تبديل مكان الكشكين على الخريطة'), h('br'),
         h('span', { class: 'hint' }, 'يبقى كل حجز على رقم كشكه، لكن موقعي الكشكين يتبادلان على الخريطة. استخدمه عند نقل الكشكين فعلياً في الموقع.'))) : null,
       both.length ? h('p', { class: 'warnbox' }, `الحجز ${both.map(r => r.customer_name).join('، ')} يشمل الكشكين معاً، لذلك يبقى كما هو.`) : null,
       h('p', { class: 'hint', style: { margin: 0 } }, 'الأسعار المتفق عليها لا تتغير. العقود المطبوعة سابقاً تبقى بالرقم القديم؛ افتح العقد من الحجز لطباعته بالرقم الجديد.')],
@@ -716,7 +721,7 @@ function pageMap(root) {
         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } }, ks.map(k => h('span', { class: 'chip' }, k.code))),
         busy.length ? h('p', { class: 'hint', style: { color: 'var(--bad)' } }, 'عليها حجوزات في الفترة المختارة: ' + busy.map(k => k.code).join('، ')) : null,
         can.book() ? h('button', { class: 'btn primary', onclick: () => openBooking({ kioskIds: selected, from, to }) }, 'حجز الأكشاك المحددة') : null,
-        can.admin() ? bulkZone(ks) : null,
+        can.mapEdit() ? bulkZone(ks) : null,
         h('button', { class: 'btn ghost', onclick: () => { selected = []; mv.setSelected([]); drawPanel(); } }, 'إلغاء التحديد')));
       return;
     }
@@ -741,19 +746,19 @@ function pageMap(root) {
         to: firstGap.e < to ? firstGap.e : to >= firstGap.s && to <= firstGap.e ? to : firstGap.e,
       }) }, 'حجز هذا الكشك') : null,
       can.book() ? h('button', { class: 'btn', onclick: () => startSwap(k) }, '⇄ تبديل مع كشك آخر') : null,
-      can.admin() ? h('button', { class: 'btn', onclick: () => renameKiosk(k) }, '✎ تعديل الكشك (الرقم، السعة، السعر)') : null,
+      can.mapEdit() ? h('button', { class: 'btn', onclick: () => renameKiosk(k) }, '✎ تعديل الكشك (الرقم، السعة، السعر)') : null,
       s === 'partial' ? h('p', { class: 'hint', style: { margin: 0 } }, 'محجوز لجزء من الفترة المعروضة فقط، وباقي الأيام متاحة للحجز.') : null,
       gaps.length && live.length ? h('div', { class: 'hint' }, 'أيام متوفرة: ', gaps.map(g => g.s === g.e ? fmtDate(g.s) : `${fmtDate(g.s)}–${fmtDate(g.e)}`).join('، ')) : null,
       !k.active || !k.rentable ? h('div', { class: 'warnbox disabled-box' },
         h('span', {}, 'هذا الكشك غير متاح للإيجار.'),
-        can.admin() ? h('div', { class: 'pp-tools' },
+        can.mapEdit() ? h('div', { class: 'pp-tools' },
           h('button', { class: 'btn small pine', onclick: async () => {
             const { error } = await sb.from('kiosks').update({ active: true, rentable: true }).eq('id', k.id);
             if (error) return toast(errText(error), { error: true });
             await refresh(); toast('أُعيد الكشك ' + k.code + ' وأصبح متاحاً للحجز');
           } }, '↺ إعادة الكشك للحجز'),
           h('button', { class: 'btn small danger', onclick: () => removeKiosk(k) }, 'حذف من الخريطة نهائياً')) : null) : null,
-      can.admin() && k.active && k.rentable && !live.length ? h('button', { class: 'btn ghost small', style: { alignSelf: 'flex-start' }, onclick: async () => {
+      can.mapEdit() && k.active && k.rentable && !live.length ? h('button', { class: 'btn ghost small', style: { alignSelf: 'flex-start' }, onclick: async () => {
         const { error } = await sb.from('kiosks').update({ active: false, rentable: false }).eq('id', k.id);
         if (error) return toast(errText(error), { error: true });
         await refresh(); toast('أصبح الكشك ' + k.code + ' غير متاح', { actions: [{ label: 'تراجع', run: async () => { await sb.from('kiosks').update({ active: true, rentable: true }).eq('id', k.id); await refresh(); } }] });

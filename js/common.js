@@ -164,7 +164,8 @@ export function errText(e) {
   if (/no_double_booking|exclusion|23P01/.test(m + (e?.code || ''))) return m.includes('الكشك') || m.includes('الأكشاك') ? m : 'الكشك محجوز لجهة أخرى في هذه الفترة';
   if (/row-level security|42501|permission denied/i.test(m + (e?.code || ''))) return m.match(/[؀-ۿ]/) ? m : 'ليس لديك صلاحية لهذه العملية';
   if (/Failed to fetch|NetworkError/i.test(m)) return 'تعذر الاتصال بالإنترنت. تحقق من الاتصال وحاول مرة أخرى.';
-  if (/Invalid login credentials/i.test(m)) return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+  if (/Invalid login credentials/i.test(m)) return 'اسم المستخدم أو كلمة المرور غير صحيحة';
+  if (/banned/i.test(m)) return 'هذا الحساب موقوف. راجع المدير العام.';
   return m;
 }
 

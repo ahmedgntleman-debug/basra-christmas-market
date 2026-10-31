@@ -315,7 +315,7 @@ async function fillExtras(r, live, m, { schedBox, docsBox, histBox }) {
     sb.from('payment_schedules').select('*').eq('reservation_id', r.id).order('due_date'),
     sb.from('contracts').select('*').eq('reservation_id', r.id).order('created_at', { ascending: false }),
     sb.from('documents').select('*').eq('reservation_id', r.id).order('created_at', { ascending: false }),
-    can.admin() ? sb.from('activity_log').select('*').eq('entity_id', r.id).order('at', { ascending: false }).limit(50) : Promise.resolve({ data: [] }),
+    can.log() ? sb.from('activity_log').select('*').eq('entity_id', r.id).order('at', { ascending: false }).limit(50) : Promise.resolve({ data: [] }),
   ]);
   const H3 = t => h('h3', { style: { margin: '4px 0 0', fontSize: '15px' } }, t);
   // installments

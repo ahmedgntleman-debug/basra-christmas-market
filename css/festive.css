@@ -366,3 +366,22 @@ table.t tfoot td { background: #fdf7ee; }
 .qr-poster h3{margin:0;font-family:Lalezar,"Readex Pro",serif;font-weight:400;font-size:26px;color:var(--g)}.qr-poster p{margin:0;opacity:.85;font-size:13px}
 .qp-code{background:#fff;padding:12px;border-radius:18px;border:3px solid var(--g);box-shadow:0 10px 26px rgba(0,0,0,.3)}.qp-code svg{display:block;width:220px;height:220px}
 .qp-cta{font-size:15px}.qr-poster code{font-size:11px;opacity:.75;word-break:break-all}
+/* staff accounts */
+.staff-list{display:flex;flex-direction:column;gap:8px}
+.staff-row{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line,#e5e0d6);border-radius:14px;flex-wrap:wrap}
+.staff-row.off{opacity:.6}
+.st-av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;background:linear-gradient(160deg,var(--t-dark),var(--t-primary));flex:none}
+.st-main{flex:1;min-width:200px;display:flex;flex-direction:column;gap:4px}
+.st-title{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--t-primary) 12%,transparent);color:var(--t-primary)}
+.st-title.admin{background:var(--t-gold);color:#fff}
+.st-perms{display:flex;flex-wrap:wrap;gap:4px}.st-perms .chip{font-size:11.5px}
+.st-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.perm-wrap{display:flex;flex-direction:column;gap:10px}
+.perm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.perm-box{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line,#e5e0d6);border-radius:12px;cursor:pointer}
+.perm-box:has(input:checked){border-color:var(--t-primary);background:color-mix(in srgb,var(--t-primary) 6%,transparent)}
+.perm-box span{display:flex;flex-direction:column}.perm-box small{color:#7a7264;font-size:11.5px}
+.tpl-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.proj-pick{display:flex;flex-direction:column;gap:4px;padding-inline-start:24px}
+.super-box{padding:8px 10px;border-radius:12px;background:color-mix(in srgb,var(--t-gold) 14%,transparent)}
+.cred-box{background:#f7f4ee;padding:12px;border-radius:12px;white-space:pre-wrap;font-family:inherit;font-size:14px;margin:0}

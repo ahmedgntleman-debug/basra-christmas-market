@@ -28,15 +28,56 @@ create table if not exists public.profiles (
              check (role in ('super_admin','reservations','finance','readonly')),
   created_at timestamptz not null default now()
 );
+alter table public.profiles add column if not exists title text;
+alter table public.profiles add column if not exists permissions text[];
+alter table public.profiles add column if not exists projects uuid[];
+alter table public.profiles add column if not exists active boolean not null default true;
+alter table public.profiles add column if not exists username text;
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check check (role in ('super_admin','reservations','finance','readonly','staff'));
 
 create or replace function public.app_role() returns text
 language sql stable security definer set search_path = public as $$
-  select role from public.profiles where user_id = auth.uid()
+  select role from public.profiles where user_id = auth.uid() and coalesce(active, true)
 $$;
 
 create or replace function public.has_role(variadic roles text[]) returns boolean
 language sql stable security definer set search_path = public as $$
-  select coalesce((select role = any(roles) from public.profiles where user_id = auth.uid()), false)
+  select coalesce((select role = any(roles) and active from public.profiles where user_id = auth.uid()), false)
+$$;
+
+-- ---------------------------------------------------------------------
+-- Staff accounts with permissions chosen by the super admin
+--   role 'staff' + permissions[] (job title is free text: مشرف، استقبال، محاسب…)
+--   projects[] limits the account to some projects (null = all projects)
+--   the older fixed roles keep working through role_perms()
+-- ---------------------------------------------------------------------
+
+create or replace function public.role_perms(p_role text) returns text[]
+language sql immutable as $$
+  select case p_role
+    when 'reservations' then array['book','customers','pay','checkin','reports']
+    when 'finance'      then array['pay','customers','daily','pnl_view','pnl_edit','reports','checkin']
+    when 'readonly'     then array['reports','pnl_view']
+    else '{}'::text[] end
+$$;
+
+create or replace function public.has_perm(variadic ps text[]) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select active and (role = 'super_admin' or coalesce(permissions, public.role_perms(role)) && ps)
+                   from public.profiles where user_id = auth.uid()), false)
+$$;
+
+create or replace function public.can_edition(p_edition uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select active and (role = 'super_admin' or projects is null or p_edition = any(projects))
+                   from public.profiles where user_id = auth.uid()), false)
+$$;
+
+create or replace function public.my_perms() returns text[]
+language sql stable security definer set search_path = public as $$
+  select case when not active then '{}'::text[] when role = 'super_admin' then array['*'] else coalesce(permissions, public.role_perms(role)) end
+  from public.profiles where user_id = auth.uid()
 $$;
 
 -- First account ever created becomes super_admin; everyone after starts read-only.
@@ -415,7 +456,7 @@ declare
   v_pay  bigint := nullif(p->>'first_payment','')::bigint;
   v_taken text;
 begin
-  if not public.has_role('super_admin','reservations') then
+  if not public.has_perm('book') then
     raise exception 'ليس لديك صلاحية إنشاء حجز' using errcode = '42501';
   end if;
   perform public.release_expired_holds();
@@ -468,7 +509,7 @@ create or replace function public.set_reservation_kiosks(p_res uuid, p_kiosks uu
 language plpgsql security invoker set search_path = public as $$
 declare v_taken text; r reservations;
 begin
-  if not public.has_role('super_admin','reservations') then
+  if not public.has_perm('book') then
     raise exception 'ليس لديك صلاحية تعديل الحجز' using errcode = '42501';
   end if;
   if coalesce(array_length(p_kiosks,1),0) = 0 then raise exception 'اختر كشكاً واحداً على الأقل'; end if;
@@ -614,8 +655,8 @@ returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare r reservations; v_prev timestamptz;
 begin
-  if not public.has_role('super_admin','reservations','finance') then
-    raise exception 'تسجيل الدخول عند الباب للموظفين فقط' using errcode = '42501';
+  if not public.has_perm('checkin') then
+    raise exception 'ليس لديك صلاحية تسجيل الدخول عند الباب' using errcode = '42501';
   end if;
   select * into r from reservations where ticket_token = p_token for update;
   if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
@@ -634,8 +675,8 @@ create or replace function public.clone_edition(p_source uuid, p jsonb) returns 
 language plpgsql security invoker set search_path = public as $$
 declare s editions; v_new uuid;
 begin
-  if not public.has_role('super_admin') then
-    raise exception 'هذه العملية للمدير العام فقط' using errcode = '42501';
+  if not public.has_perm('projects') then
+    raise exception 'ليس لديك صلاحية إنشاء المشاريع' using errcode = '42501';
   end if;
   select * into s from editions where id = p_source;
   insert into editions(slug, name, start_date, end_date, map_url, map_w, map_h,
@@ -692,67 +733,85 @@ create policy profiles_admin  on public.profiles for update to authenticated
   using (public.has_role('super_admin')) with check (public.has_role('super_admin'));
 create policy profiles_name   on public.profiles for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid() and role = public.app_role());
+-- only the super admin changes roles, permissions, projects or disables accounts
+create or replace function public.profiles_guard() returns trigger
+language plpgsql security invoker set search_path = public as $$
+begin
+  if current_user = 'authenticated' and not public.has_role('super_admin') and (new.role is distinct from old.role or new.permissions is distinct from old.permissions
+     or new.projects is distinct from old.projects or new.active is distinct from old.active or new.title is distinct from old.title) then
+    raise exception 'تعديل الصلاحيات للمدير العام فقط' using errcode = '42501';
+  end if;
+  if old.role = 'super_admin' and (new.role <> 'super_admin' or not new.active)
+     and not exists (select 1 from profiles where role = 'super_admin' and active and user_id <> old.user_id) then
+    raise exception 'يجب أن يبقى مدير عام واحد على الأقل';
+  end if;
+  return new;
+end $$;
+drop trigger if exists profiles_guard on public.profiles;
+create trigger profiles_guard before update on public.profiles for each row execute function public.profiles_guard();
 
 -- staff read
-create policy editions_read on public.editions for select to authenticated using (public.app_role() is not null);
-create policy kiosks_read   on public.kiosks   for select to authenticated using (public.app_role() is not null);
+create policy editions_read on public.editions for select to authenticated using (public.app_role() is not null and public.can_edition(id));
+create policy kiosks_read   on public.kiosks   for select to authenticated using (public.app_role() is not null and public.can_edition(edition_id));
 create policy cust_read     on public.customers for select to authenticated using (public.app_role() is not null);
-create policy res_read      on public.reservations for select to authenticated using (public.app_role() is not null);
+create policy res_read      on public.reservations for select to authenticated using (public.app_role() is not null and public.can_edition(edition_id));
 create policy rk_read       on public.reservation_kiosks for select to authenticated using (public.app_role() is not null);
 create policy pay_read      on public.payments for select to authenticated using (public.app_role() is not null);
-create policy log_read      on public.activity_log for select to authenticated using (public.has_role('super_admin'));
+create policy log_read      on public.activity_log for select to authenticated using (public.has_perm('log'));
 
 -- map, kiosks, editions: super admin
-create policy editions_write on public.editions for all to authenticated
-  using (public.has_role('super_admin')) with check (public.has_role('super_admin'));
+create policy editions_ins on public.editions for insert to authenticated with check (public.has_perm('projects'));
+create policy editions_upd on public.editions for update to authenticated
+  using (public.has_perm('settings','projects') and public.can_edition(id)) with check (public.has_perm('settings','projects') and public.can_edition(id));
+create policy editions_del on public.editions for delete to authenticated using (public.has_perm('projects'));
 create policy kiosks_write on public.kiosks for all to authenticated
-  using (public.has_role('super_admin')) with check (public.has_role('super_admin'));
+  using (public.has_perm('map_edit') and public.can_edition(edition_id)) with check (public.has_perm('map_edit') and public.can_edition(edition_id));
 -- reservation managers may add custom rental areas (group AR) drawn on the map
 create policy kiosks_area_ins on public.kiosks for insert to authenticated
-  with check (grp = 'AR' and public.has_role('super_admin','reservations'));
+  with check (grp = 'AR' and public.has_perm('book') and public.can_edition(edition_id));
 
 -- customers: everyone except read-only
 create policy cust_ins on public.customers for insert to authenticated
-  with check (public.has_role('super_admin','reservations','finance'));
+  with check (public.has_perm('customers','book','pay'));
 create policy cust_upd on public.customers for update to authenticated
-  using (public.has_role('super_admin','reservations','finance'));
+  using (public.has_perm('customers','book','pay'));
 create policy cust_del on public.customers for delete to authenticated
   using (public.has_role('super_admin'));
 
 -- reservations: super admin + reservation manager
 create policy res_ins on public.reservations for insert to authenticated
-  with check (public.has_role('super_admin','reservations'));
+  with check (public.has_perm('book') and public.can_edition(edition_id));
 create policy res_upd on public.reservations for update to authenticated
-  using (public.has_role('super_admin','reservations'));
+  using (public.has_perm('book') and public.can_edition(edition_id));
 create policy rk_ins on public.reservation_kiosks for insert to authenticated
-  with check (public.has_role('super_admin','reservations'));
+  with check (public.has_perm('book'));
 create policy rk_upd on public.reservation_kiosks for update to authenticated
-  using (public.has_role('super_admin','reservations'));
+  using (public.has_perm('book'));
 create policy rk_del on public.reservation_kiosks for delete to authenticated
-  using (public.has_role('super_admin','reservations'));
+  using (public.has_perm('book'));
 -- (no delete policy on reservations: cancel instead, history is kept)
 
 -- payments: insert only (no update / delete for anyone)
 create policy pay_ins on public.payments for insert to authenticated
-  with check (public.has_role('super_admin','reservations','finance'));
+  with check (public.has_perm('pay'));
 
 -- installments: reservation manager + finance
 create policy sched_read on public.payment_schedules for select to authenticated using (public.app_role() is not null);
 create policy sched_write on public.payment_schedules for all to authenticated
-  using (public.has_role('super_admin','reservations','finance')) with check (public.has_role('super_admin','reservations','finance'));
+  using (public.has_perm('pay')) with check (public.has_perm('pay'));
 
 -- contracts & documents: kept on the record; only super admin deletes
 create policy contracts_read on public.contracts for select to authenticated using (public.app_role() is not null);
-create policy contracts_ins on public.contracts for insert to authenticated with check (public.has_role('super_admin','reservations','finance'));
+create policy contracts_ins on public.contracts for insert to authenticated with check (public.has_perm('book','pay'));
 create policy contracts_del on public.contracts for delete to authenticated using (public.has_role('super_admin'));
 create policy docs_read on public.documents for select to authenticated using (public.app_role() is not null);
-create policy docs_ins on public.documents for insert to authenticated with check (public.has_role('super_admin','reservations','finance'));
+create policy docs_ins on public.documents for insert to authenticated with check (public.has_perm('book','pay'));
 create policy docs_del on public.documents for delete to authenticated using (public.has_role('super_admin'));
 
 -- daily visitors & income: finance + super admin write, all staff read
-create policy daily_read on public.daily_stats for select to authenticated using (public.app_role() is not null);
+create policy daily_read on public.daily_stats for select to authenticated using (public.app_role() is not null and public.can_edition(edition_id));
 create policy daily_write on public.daily_stats for all to authenticated
-  using (public.has_role('super_admin','finance')) with check (public.has_role('super_admin','finance'));
+  using (public.has_perm('daily') and public.can_edition(edition_id)) with check (public.has_perm('daily') and public.can_edition(edition_id));
 
 -- Anonymous visitors get nothing except get_public_map()
 revoke all on all tables in schema public from anon;
@@ -762,7 +821,7 @@ revoke execute on all functions in schema public from anon, public;
 grant execute on function public.get_public_map(text, date, date) to anon, authenticated;
 grant execute on function public.get_ticket(uuid) to anon, authenticated;
 grant execute on function public.check_in(uuid, boolean) to authenticated;
-grant execute on function public.app_role(), public.has_role(text[]), public.baghdad_today(),
+grant execute on function public.app_role(), public.has_role(text[]), public.has_perm(text[]), public.can_edition(uuid), public.my_perms(), public.role_perms(text), public.baghdad_today(),
   public.create_reservation(jsonb), public.set_reservation_kiosks(uuid, uuid[]),
   public.release_expired_holds(), public.kiosk_status(uuid, date, date),
   public.clone_edition(uuid, jsonb), public.staff_email(uuid) to authenticated;
@@ -786,17 +845,17 @@ drop policy if exists documents_read on storage.objects;
 drop policy if exists documents_write on storage.objects;
 create policy maps_read on storage.objects for select using (bucket_id = 'maps');
 create policy maps_write on storage.objects for insert to authenticated
-  with check (bucket_id = 'maps' and public.has_role('super_admin'));
+  with check (bucket_id = 'maps' and public.has_perm('map_edit','settings','projects'));
 create policy maps_update on storage.objects for update to authenticated
-  using (bucket_id = 'maps' and public.has_role('super_admin'));
+  using (bucket_id = 'maps' and public.has_perm('map_edit','settings','projects'));
 create policy receipts_read on storage.objects for select to authenticated
   using (bucket_id = 'receipts' and public.app_role() is not null);
 create policy receipts_write on storage.objects for insert to authenticated
-  with check (bucket_id = 'receipts' and public.has_role('super_admin','reservations','finance'));
+  with check (bucket_id = 'receipts' and public.has_perm('book','pay'));
 create policy documents_read on storage.objects for select to authenticated
   using (bucket_id = 'documents' and public.app_role() is not null);
 create policy documents_write on storage.objects for insert to authenticated
-  with check (bucket_id = 'documents' and public.has_role('super_admin','reservations','finance'));
+  with check (bucket_id = 'documents' and public.has_perm('book','pay'));
 
 -- ---------------------------------------------------------------------
 -- Live updates for the admin screens
@@ -833,9 +892,9 @@ create trigger audit_ledger after insert or update or delete on public.ledger fo
 alter table public.ledger enable row level security;
 drop policy if exists ledger_read on public.ledger;
 drop policy if exists ledger_write on public.ledger;
-create policy ledger_read on public.ledger for select to authenticated using (public.has_role('super_admin','finance','readonly'));
+create policy ledger_read on public.ledger for select to authenticated using (public.has_perm('pnl_view','pnl_edit') and public.can_edition(edition_id));
 create policy ledger_write on public.ledger for all to authenticated
-  using (public.has_role('super_admin','finance')) with check (public.has_role('super_admin','finance'));
+  using (public.has_perm('pnl_edit') and public.can_edition(edition_id)) with check (public.has_perm('pnl_edit') and public.can_edition(edition_id));
 revoke all on public.ledger from anon;
 grant select, insert, update, delete on public.ledger to authenticated;
 do $$ begin begin alter publication supabase_realtime add table public.ledger; exception when others then null; end; end $$;
@@ -853,13 +912,13 @@ begin
   if ka.id = kb.id then raise exception 'اختر كشكين مختلفين'; end if;
   if ka.edition_id <> kb.edition_id then raise exception 'الكشكان من نسختين مختلفتين'; end if;
   if p_mode = 'position' then
-    if not public.has_role('super_admin') then raise exception 'تبديل المكان على الخريطة للمدير العام فقط' using errcode = '42501'; end if;
+    if not public.has_perm('map_edit') then raise exception 'ليس لديك صلاحية تعديل الخريطة' using errcode = '42501'; end if;
     g := ka.geom; sh := ka.shape;
     update kiosks set geom = kb.geom, shape = kb.shape where id = ka.id;
     update kiosks set geom = g, shape = sh where id = kb.id;
     return format('تم تبديل مكان %s و %s على الخريطة', ka.code, kb.code);
   end if;
-  if not public.has_role('super_admin','reservations') then raise exception 'ليس لديك صلاحية تعديل الحجوزات' using errcode = '42501'; end if;
+  if not public.has_perm('book') then raise exception 'ليس لديك صلاحية تعديل الحجوزات' using errcode = '42501'; end if;
   perform public.release_expired_holds();
   -- reservations that already hold both kiosks stay as they are
   select coalesce(array_agg(rk.reservation_id), '{}') into ra from reservation_kiosks rk
@@ -882,7 +941,7 @@ create or replace function public.delete_kiosk(p_kiosk uuid) returns text
 language plpgsql security invoker set search_path = public as $$
 declare k kiosks; v_live text;
 begin
-  if not public.has_role('super_admin') then raise exception 'حذف الأكشاك للمدير العام فقط' using errcode = '42501'; end if;
+  if not public.has_perm('map_edit') then raise exception 'ليس لديك صلاحية حذف الأكشاك' using errcode = '42501'; end if;
   select * into k from kiosks where id = p_kiosk;
   if k.id is null then raise exception 'الكشك غير موجود'; end if;
   perform public.release_expired_holds();
@@ -908,7 +967,7 @@ create or replace function public.delete_edition(p_edition uuid, p_confirm text)
 language plpgsql security definer set search_path = public as $$
 declare e editions; v_res int; v_pay int;
 begin
-  if not public.has_role('super_admin') then raise exception 'حذف المشاريع للمدير العام فقط' using errcode = '42501'; end if;
+  if not public.has_perm('projects') then raise exception 'ليس لديك صلاحية حذف المشاريع' using errcode = '42501'; end if;
   select * into e from editions where id = p_edition;
   if e.id is null then raise exception 'المشروع غير موجود'; end if;
   if trim(coalesce(p_confirm, '')) <> trim(e.name) then raise exception 'اكتب اسم المشروع كما هو لتأكيد الحذف'; end if;

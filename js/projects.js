@@ -53,7 +53,7 @@ export function themePicker(value, onPick) {
 }
 
 export function openNewProject() {
-  if (!can.admin()) return toast('إنشاء المشاريع للمدير العام فقط', { error: true });
+  if (!can.projects()) return toast('ليس لديك صلاحية إنشاء المشاريع', { error: true });
   const E = S.edition;
   let type = 'concert';
   const today = todayISO();
@@ -186,19 +186,19 @@ export function projectsSection(sec) {
       h('div', { class: 'pr-main' }, h('strong', {}, e.name, ' ', h('span', { class: 'pub-badge ' + (e.public_enabled ? 'on' : 'off') }, e.public_enabled ? '● ظاهر للزبائن' : '○ مخفي عن الزبائن')), h('span', { class: 'hint' }, `${T.label} · ${e.start_date === e.end_date ? fmtDate(e.start_date) : fmtDate(e.start_date) + ' – ' + fmtDate(e.end_date)}${e.venue ? ' · ' + e.venue : ''}${e.archived ? ' · مؤرشف' : ''}`)),
       h('div', { class: 'pr-acts' },
         isActive(e) ? copyBtn('🔗 رابط المنظمين', adminLink(e)) : null,
-        can.admin() ? h('button', { type: 'button', class: 'btn small ' + (e.public_enabled ? 'ghost' : 'pine'), onclick: () => togglePublic(e) },
+        can.projects() || can.settings() ? h('button', { type: 'button', class: 'btn small ' + (e.public_enabled ? 'ghost' : 'pine'), onclick: () => togglePublic(e) },
           e.public_enabled ? '⏸ إخفاء عن الزبائن' : '▶ تفعيل للزبائن') : null,
         isActive(e) && e.public_enabled ? copyBtn('🔗 رابط الزبائن', publicLink(e)) : null,
         e.public_enabled ? h('button', { type: 'button', class: 'btn small', onclick: () => openProjectQR(e) }, '▦ QR') : null,
         isActive(e) && e.public_enabled ? h('a', { class: 'btn small wa', target: '_blank', rel: 'noopener',
           href: 'https://wa.me/?text=' + encodeURIComponent(`${T.icon} ${e.name}\n${publicLink(e)}`) }, 'واتساب') : null,
         cur ? h('span', { class: 'badge b-confirmed' }, 'مفتوح الآن') : h('button', { class: 'btn small', onclick: () => switchEdition(e.id) }, 'فتح'),
-        can.admin() ? h('button', { type: 'button', class: 'btn small danger', title: 'حذف المشروع نهائياً', onclick: () => deleteProject(e) }, '🗑 حذف') : null));
+        can.projects() ? h('button', { type: 'button', class: 'btn small danger', title: 'حذف المشروع نهائياً', onclick: () => deleteProject(e) }, '🗑 حذف') : null));
   }));
   const general = h('div', { class: 'linkbox' }, h('span', { class: 'hint' }, 'الرابط العام (يفتح أقرب مشروع فعّال تلقائياً، ويمكن للزبون التبديل بين المشاريع):'),
     h('code', { dir: 'ltr' }, new URL('public.html', location.href).href), copyBtn('نسخ', new URL('public.html', location.href).href));
   return sec('المشاريع', h('p', { class: 'hint', style: { margin: 0 } }, 'كل مشروع له خريطته وأكشاكه أو طاولاته وحجوزاته وتقاريره وتصميمه الخاص.'),
-    list, general, can.admin() ? h('div', {}, h('button', { class: 'btn primary', onclick: openNewProject }, '✨ مشروع جديد')) : null);
+    list, general, can.projects() ? h('div', {}, h('button', { class: 'btn primary', onclick: openNewProject }, '✨ مشروع جديد')) : null);
 }
 
 async function togglePublic(e) {

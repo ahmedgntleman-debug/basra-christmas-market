@@ -8,6 +8,7 @@ import { openBooking, openReservation, openPayment, openCustomer, field, DEAL_LA
 import { listModels, pickModel } from './assistant.js';
 import { projectFields, projectsSection, openNewProject, GENERIC_CONTRACT } from './projects.js';
 import { unitOf } from './state.js';
+import { usersSection } from './staff.js';
 
 const numCell = (v, unknown = '—') => h('td', { class: 'money' }, v == null ? h('span', { class: 'hint' }, unknown) : h('span', { class: 'num' }, fmtNum(v)));
 
@@ -158,7 +159,7 @@ export function pageReports(root) {
   const body = h('div', { class: 'rbody' });
   const adv = settings().advanced_reports;
   if (!adv && ['reservations', 'editions'].includes(tab)) tab = 'outstanding';
-  const drawTabs = () => tabs.replaceChildren(...TABS.filter(([k]) => (k !== 'log' || can.admin()) && (adv || !['reservations', 'editions'].includes(k))).map(([k, l]) =>
+  const drawTabs = () => tabs.replaceChildren(...TABS.filter(([k]) => (k !== 'log' || can.log()) && (adv || !['reservations', 'editions'].includes(k))).map(([k, l]) =>
     h('button', { role: 'tab', 'aria-selected': k === tab, onclick: () => { tab = k; sessionStorage.setItem('bcm.rtab', k); drawTabs(); draw(); } }, l)));
   const draw = () => ({ visitors: rVisitors, people: rPeople, outstanding: rOutstanding, payments: rPayments, daily: rDaily, availability: rAvailability, reservations: rReservations, editions: rEditions, log: rLog }[tab] || rOutstanding)(body);
   drawTabs(); draw();
@@ -384,7 +385,7 @@ function reportTable(list, cols, onRow) {
 
 // ================= settings =================
 export function pageSettings(root) {
-  const E = S.edition, admin = can.admin(), cfg = settings();
+  const E = S.edition, admin = can.settings(), cfg = settings();
   const sec = (title, ...kids) => h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', {}, title)), ...kids);
   const dis = !admin;
 
@@ -519,9 +520,11 @@ export function pageSettings(root) {
       field('نص عقد الرعاية', stpl),
       admin ? h('div', { style: { display: 'flex', gap: '8px' } }, saveFeatures, h('button', { class: 'btn ghost', onclick: () => { tpl.value = DEFAULT_CONTRACT; stpl.value = DEFAULT_SPONSOR_CONTRACT; } }, 'استعادة نصوص العقود الافتراضية')) : null),
   ];
-  if (admin) children.push(assistantSection(sec, E, saveEdition), cloneSection(sec), usersSection(sec), backupSection(sec));
+  if (can.admin()) children.push(assistantSection(sec, E, saveEdition));
+  if (can.projects()) children.push(cloneSection(sec));
+  if (can.admin()) children.push(usersSection(sec), backupSection(sec));
   children.push(accountSection(sec));
-  if (!admin) children.unshift(h('p', { class: 'warnbox' }, 'تعديل الإعدادات متاح للمدير العام فقط.'));
+  if (!admin) children.unshift(h('p', { class: 'warnbox' }, 'ليس لديك صلاحية تعديل إعدادات المشروع. تستطيع تغيير كلمة مرورك من «حسابي».'));
   root.replaceChildren(h('div', { class: 'settings' }, children));
   root._refresh = () => {};   // don't wipe half-typed settings on live updates
 }
@@ -561,39 +564,18 @@ function cloneSection(sec) {
     h('div', {}, btn));
 }
 
-function usersSection(sec) {
-  const box = h('div', { class: 'spinner' });
-  const out = sec('المستخدمون والصلاحيات',
-    h('p', { class: 'hint', style: { margin: 0 } }, 'لإضافة موظف: من لوحة Supabase ← Authentication ← Add user (بريد وكلمة مرور). يظهر هنا بصلاحية «اطلاع فقط»، ثم اختر له الصلاحية المناسبة.'),
-    box);
-  sb.from('profiles').select('*').order('created_at').then(({ data, error }) => {
-    if (error) return box.replaceWith(h('p', { class: 'hint' }, errText(error)));
-    box.replaceWith(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-      h('thead', {}, h('tr', {}, ['المستخدم', 'الاسم', 'الصلاحية'].map(t => h('th', {}, t)))),
-      h('tbody', {}, data.map(p => {
-        const sel = h('select', { class: 'in', disabled: p.user_id === S.user.id }, Object.entries(ROLE_LABEL).map(([k, v]) => h('option', { value: k, selected: p.role === k }, v)));
-        const nm = h('input', { class: 'in', value: p.full_name || '', placeholder: 'اسم الموظف' });
-        sel.onchange = async () => { const { error } = await sb.from('profiles').update({ role: sel.value }).eq('user_id', p.user_id); toast(error ? errText(error) : 'تم تغيير الصلاحية', { error: !!error }); };
-        nm.onchange = async () => { const { error } = await sb.from('profiles').update({ full_name: nm.value.trim() || null }).eq('user_id', p.user_id); toast(error ? errText(error) : 'تم حفظ الاسم', { error: !!error }); };
-        return h('tr', {}, h('td', { dir: 'ltr', style: { textAlign: 'start' } }, p.email), h('td', {}, nm), h('td', {}, sel));
-      })))),
-      h('p', { class: 'hint' }, 'المدير العام: كل شيء. مدير الحجوزات: الحجوزات والعملاء والدفعات. المسؤول المالي: الدفعات والعملاء. اطلاع فقط: مشاهدة بدون تعديل.'));
-  });
-  return out;
-}
-
 function accountSection(sec) {
   const p1 = h('input', { class: 'in', type: 'password', autocomplete: 'new-password' });
   const p2 = h('input', { class: 'in', type: 'password', autocomplete: 'new-password' });
   const btn = h('button', { class: 'btn' }, 'تغيير كلمة المرور');
   btn.onclick = async () => {
-    if (p1.value.length < 8) return toast('كلمة المرور 8 أحرف على الأقل', { error: true });
+    if (p1.value.length < 6) return toast('كلمة المرور 6 أحرف على الأقل', { error: true });
     if (p1.value !== p2.value) return toast('كلمتا المرور غير متطابقتين', { error: true });
     const { error } = await sb.auth.updateUser({ password: p1.value });
     toast(error ? errText(error) : 'تم تغيير كلمة المرور', { error: !!error });
     if (!error) p1.value = p2.value = '';
   };
-  return sec('حسابي — ' + (S.user.email || ''), h('div', { class: 'grid2' }, field('كلمة مرور جديدة', p1), field('تأكيدها', p2)), h('div', {}, btn));
+  return sec('حسابي — ' + (S.profile?.username || S.user.email || ''), h('div', { class: 'grid2' }, field('كلمة مرور جديدة', p1), field('تأكيدها', p2)), h('div', {}, btn));
 }
 
 function backupSection(sec) {

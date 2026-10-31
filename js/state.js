@@ -22,15 +22,57 @@ export const onChange = fn => (listeners.add(fn), () => listeners.delete(fn));
 const emit = () => listeners.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
 
 export const role = () => S.profile?.role;
-export const can = {
-  book: () => ['super_admin', 'reservations'].includes(role()),
-  pay: () => ['super_admin', 'reservations', 'finance'].includes(role()),
-  daily: () => ['super_admin', 'finance'].includes(role()),
-  pnl: () => ['super_admin', 'finance', 'readonly'].includes(role()),
-  ledger: () => ['super_admin', 'finance'].includes(role()),
-  customers: () => ['super_admin', 'reservations', 'finance'].includes(role()),
-  admin: () => role() === 'super_admin',
+// permissions (same keys and defaults as the database: has_perm / role_perms)
+export const PERMS = [
+  ['book', 'الحجوزات', 'إنشاء الحجوزات وتعديلها ونقلها وإلغاؤها'],
+  ['pay', 'الدفعات', 'تسجيل الدفعات والأقساط والعقود والإيصالات'],
+  ['customers', 'العملاء', 'إضافة العملاء وتعديل بياناتهم'],
+  ['checkin', 'الدخول عند الباب', 'مسح التذاكر وتسجيل دخول الزبائن'],
+  ['daily', 'الزوار والإيراد اليومي', 'تسجيل عدد الزوار والإيراد اليومي'],
+  ['pnl_view', 'عرض الأرباح والخسائر', 'مشاهدة قائمة الأرباح والخسائر'],
+  ['pnl_edit', 'قيود الأرباح والخسائر', 'إدخال الإيرادات والمصاريف وتعديلها'],
+  ['reports', 'التقارير', 'التقارير وتصدير Excel'],
+  ['map_edit', 'تعديل الخريطة', 'إضافة الأكشاك والطاولات وتحريكها وحذفها والمناطق'],
+  ['settings', 'إعدادات المشروع', 'بيانات المشروع والتصميم والعقود وأرقام الاستفسار'],
+  ['projects', 'إدارة المشاريع', 'إنشاء المشاريع وتفعيلها وحذفها'],
+  ['log', 'سجل النشاط', 'مشاهدة من فعل ماذا ومتى'],
+];
+export const ROLE_PERMS = {
+  reservations: ['book', 'customers', 'pay', 'checkin', 'reports'],
+  finance: ['pay', 'customers', 'daily', 'pnl_view', 'pnl_edit', 'reports', 'checkin'],
+  readonly: ['reports', 'pnl_view'],
 };
+// ready-made job templates (the super admin can tick or untick anything after choosing one)
+export const JOB_TEMPLATES = [
+  ['مشرف', ['book', 'pay', 'customers', 'checkin', 'daily', 'pnl_view', 'reports', 'map_edit', 'log']],
+  ['مدير حجوزات', ['book', 'pay', 'customers', 'checkin', 'reports']],
+  ['استقبال', ['book', 'customers', 'checkin']],
+  ['موظف الباب', ['checkin']],
+  ['محاسب', ['pay', 'customers', 'daily', 'pnl_view', 'pnl_edit', 'reports']],
+  ['اطلاع فقط', ['reports', 'pnl_view']],
+];
+export const myPerms = () => {
+  const p = S.profile; if (!p || p.active === false) return [];
+  if (p.role === 'super_admin') return PERMS.map(x => x[0]);
+  return p.permissions || ROLE_PERMS[p.role] || [];
+};
+export const has = (...ks) => { const m = myPerms(); return ks.some(k => m.includes(k)); };
+export const can = {
+  book: () => has('book'),
+  pay: () => has('pay'),
+  daily: () => has('daily'),
+  pnl: () => has('pnl_view', 'pnl_edit'),
+  ledger: () => has('pnl_edit'),
+  customers: () => has('customers', 'book', 'pay'),
+  checkin: () => has('checkin'),
+  reports: () => has('reports'),
+  mapEdit: () => has('map_edit'),
+  settings: () => has('settings'),
+  projects: () => has('projects'),
+  log: () => has('log'),
+  admin: () => role() === 'super_admin',   // accounts & permissions, backups, assistant key
+};
+export const roleLabel = (p = S.profile) => p?.title || ({ super_admin: 'مدير عام', reservations: 'مدير الحجوزات', finance: 'المسؤول المالي', readonly: 'اطلاع فقط', staff: 'موظف' })[p?.role] || '';
 
 export const settings = () => ({
   reminders: true, reminder_days: 3, reminders_overdue_only: false,
