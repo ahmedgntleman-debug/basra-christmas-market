@@ -10,7 +10,7 @@ import { pageReservations, pageCustomers, pageReports, pageSettings, openDailyEn
 import { openAssistant, assistantReady } from './assistant.js';
 import { pagePnl } from './pnl.js';
 import { startI18n } from './i18n.js';
-import { initFestive, garland, baubles, countdown, tree, toggleButton, burst, jingle, sleigh } from './festive.js';
+import { initFestive, garland, baubles, countdown, tree, toggleButton, soundButton, soundOn, festiveOn, burst, jingle, sleigh } from './festive.js';
 
 const view = () => $('#view');
 const ROUTES = {
@@ -85,7 +85,11 @@ function shell() {
   const pl = $('.nav a[href="#/pnl"]'); if (pl) pl.hidden = !can.pnl();
   garland($('.top'));
   sleigh({ first: 9000, every: [40000, 80000], when: () => !document.querySelector('.scrim') && /^#?\/?$/.test(location.hash) });
-  $('.nav .foot').prepend(toggleButton());
+  $('.nav .foot').prepend(toggleButton(), soundButton());
+  // compact switches in the top bar for phones (the side menu footer is hidden there)
+  const mini = (txt, title, fn) => { const b = h('button', { class: 'fx-mini', type: 'button', title, 'aria-label': title }, txt); b.onclick = () => { fn(); b.textContent = txt === '❄' ? (festiveOn() ? '❄' : '☁') : (soundOn() ? '🔔' : '🔕'); }; return b; };
+  const ref = $('.top .mobile-out');
+  ref.before(mini(festiveOn() ? '❄' : '☁', 'الزينة', () => $('.nav .foot .fx-toggle').click()), mini(soundOn() ? '🔔' : '🔕', 'الأصوات', () => $$('.nav .foot .fx-toggle')[1].click()));
   const nl = $('#nav-logo'); if (nl) nl.onclick = e => { jingle(); burst(e.clientX, e.clientY, 16); };
   $('#who').textContent = (S.profile.full_name || S.user.email) + ' — ' + ROLE_LABEL[S.profile.role];
   $('#logout').onclick = async () => { await sb.auth.signOut(); location.hash = ''; location.reload(); };

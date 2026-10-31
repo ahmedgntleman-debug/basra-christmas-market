@@ -3,7 +3,7 @@
 import { sb, configured, $, h, fmtDate, waLink, normDigits, DEFAULT_COLORS, statusBg } from './common.js';
 import { MapView } from './map.js';
 import { startI18n, isEn } from './i18n.js';
-import { initFestive, garland, sleigh, countdown, toggleButton, jingle, burst } from './festive.js';
+import { initFestive, garland, sleigh, countdown, toggleButton, soundButton, jingle, burst } from './festive.js';
 
 const slug = new URLSearchParams(location.search).get('e') || (window.BCM_CONFIG?.DEFAULT_EDITION || 'bcm-2026');
 const fromI = $('#from'), toI = $('#to'), q = $('#q');
@@ -113,7 +113,7 @@ startI18n();
 initFestive({ density: 70 });
 garland($('.pub-top'));
 sleigh({ first: 2500 });
-$('#pub-tools').prepend(toggleButton());
+$('#pub-tools').prepend(toggleButton(), soundButton());
 $('#pub-logo').onclick = e => { jingle(); burst(e.clientX, e.clientY, 18); };
 load(true);
 setInterval(() => { if (!document.hidden) load(); }, 30000);

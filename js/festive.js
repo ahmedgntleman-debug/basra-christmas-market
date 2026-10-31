@@ -13,7 +13,7 @@ const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls)
 // ---------- sound: a small synthesized sleigh bell ----------
 let actx = null;
 export function jingle(pitch = 0) {
-  if (!festiveOn()) return;
+  if (!festiveOn() || !soundOn()) return;
   try {
     actx ||= new (window.AudioContext || window.webkitAudioContext)();
     const notes = [880, 987.8, 1174.7, 1318.5, 1568, 1760];
@@ -232,6 +232,7 @@ const SLEIGH_SVG = `<svg viewBox="0 0 300 120" width="230" height="92" aria-hidd
 
 // "Ho ho ho" — spoken by the browser's voice when available, otherwise a synthesized deep "ho".
 function hoHoHo() {
+  if (!soundOn()) return 1200;
   try {
     const synth = window.speechSynthesis, voices = synth?.getVoices() || [];
     if (synth && voices.length) {
@@ -261,6 +262,7 @@ let music = null;
 export function stopMusic() { if (music) { music.stop(); music = null; } }
 export function jingleBells() {
   stopMusic();
+  if (!soundOn()) return;
   try {
     actx ||= new (window.AudioContext || window.webkitAudioContext)();
     if (actx.state === 'suspended') actx.resume();
@@ -338,11 +340,160 @@ export function sleigh({ first = 2500, every = [24000, 50000], when = () => true
   return s;
 }
 
-// ---------- toggle ----------
+// ---------- sound settings ----------
+const SKEY = 'bcm.sound';
+const sstore = { get() { try { return localStorage.getItem(SKEY); } catch { return null; } }, set(v) { try { localStorage.setItem(SKEY, v); } catch {} } };
+export const soundOn = () => (sstore.get() ?? 'on') === 'on';
+const ac = () => { try { actx ||= new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); return actx; } catch { return null; } };
+function tone(f, at, dur, { type = 'sine', vol = .08, attack = .006, f2 = null, filter = null } = {}) {
+  const a = ac(); if (!a) return;
+  const t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  let node = o.connect(g);
+  if (filter) { const fl = a.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = filter; node = node.connect(fl); }
+  node.connect(a.destination); o.start(t); o.stop(t + dur + .05);
+}
+function bellTone(f, at, vol = .07, dur = .9) { for (const [m, v, d] of [[1, 1, 1], [2.76, .4, .55], [5.4, .18, .3]]) tone(f * m, at, dur * d, { vol: vol * v }); }
+function noiseSweep(at, dur, from, to, vol = .05, q = 1.2) {
+  const a = ac(); if (!a) return;
+  const t = a.currentTime + at, len = Math.ceil(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * i / len);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf; bp.type = 'bandpass'; bp.Q.value = q; bp.frequency.setValueAtTime(from, t); bp.frequency.exponentialRampToValueAtTime(to, t + dur);
+  g.gain.value = vol; src.connect(bp).connect(g).connect(a.destination); src.start(t);
+}
+// a small palette of interface sounds; each window type gets its own
+export const SFX = {
+  open: () => { bellTone(1318.5, 0, .05); bellTone(1975.5, .07, .045); },
+  close: () => { bellTone(1567.98, 0, .035, .5); bellTone(1046.5, .06, .03, .5); },
+  booking: () => [1046.5, 1318.5, 1568, 2093].forEach((f, i) => bellTone(f, i * .07, .045)),
+  money: () => { tone(988, 0, .08, { type: 'square', vol: .035, filter: 3500 }); tone(1319, .07, .38, { type: 'square', vol: .035, filter: 3500 }); },
+  danger: () => { tone(330, 0, .22, { type: 'triangle', vol: .09 }); tone(262, .14, .32, { type: 'triangle', vol: .09 }); },
+  paper: () => { noiseSweep(0, .22, 900, 3800, .07); noiseSweep(.12, .18, 2600, 1200, .04); },
+  magic: () => [2093, 2637, 3136, 3951, 4186].forEach((f, i) => tone(f, i * .045, .35, { vol: .025 })),
+  swap: () => { tone(520, 0, .18, { type: 'triangle', vol: .06, f2: 880 }); tone(880, .16, .18, { type: 'triangle', vol: .06, f2: 520 }); },
+  success: () => { bellTone(1568, 0, .05); bellTone(2093, .09, .05); noiseSweep(0, .25, 6000, 9000, .03, 4); },
+  error: () => { tone(196, 0, .16, { type: 'triangle', vol: .08 }); tone(185, .12, .22, { type: 'triangle', vol: .08 }); },
+  nav: () => noiseSweep(0, .18, 400, 1600, .035, .8),
+  pick: (hi = true) => tone(hi ? 1174.7 : 784, 0, .16, { type: 'triangle', vol: .06 }),
+  click: () => tone(1800, 0, .035, { type: 'sine', vol: .02 }),
+};
+export function sfx(name, ...args) { if (!soundOn()) return; try { SFX[name]?.(...args); } catch {} }
+function soundForTitle(t) {
+  if (/المساعد/.test(t)) return 'magic';
+  if (/تبديل/.test(t)) return 'swap';
+  if (/حذف|لا يمكن|إلغاء الحجز/.test(t)) return 'danger';
+  if (/دفعة|تسديد|استرجاع|تصحيح|أقساط/.test(t)) return 'money';
+  if (/حجز|مساحة|كشك جديد/.test(t)) return 'booking';
+  if (/عقد|تقرير|تصدير|استيراد|قيد|يومية|تاريخ|الخريطة/.test(t)) return 'paper';
+  return 'open';
+}
+
+// ---------- rainbow pointer trail ----------
+let trail = null;
+function startTrail() {
+  if (trail || reduced || !festiveOn()) return;
+  const c = el('canvas', 'fx-trail'); c.setAttribute('aria-hidden', 'true'); document.body.append(c);
+  const ctx = c.getContext('2d');
+  let W, H, pts = [], sparks = [], raf = 0, hue = 0;
+  const size = () => { const d = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; c.width = W * d; c.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); };
+  const LIFE = 520;
+  const move = e => {
+    if (document.documentElement.classList.contains('fx-off')) return;
+    const now = performance.now(), last = pts[pts.length - 1];
+    pts.push({ x: e.clientX, y: e.clientY, t: now });
+    if (last && Math.hypot(e.clientX - last.x, e.clientY - last.y) > 14 && Math.random() < .35)
+      sparks.push({ x: e.clientX, y: e.clientY, vx: (Math.random() - .5) * 1.2, vy: Math.random() * .8 + .3, t: now, h: hue, r: 2 + Math.random() * 2.5 });
+    if (!raf) raf = requestAnimationFrame(draw);
+  };
+  const draw = () => {
+    const now = performance.now();
+    pts = pts.filter(p => now - p.t < LIFE); sparks = sparks.filter(s => now - s.t < 900);
+    ctx.clearRect(0, 0, W, H);
+    hue = (hue + 2.2) % 360;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], age = (now - b.t) / LIFE, k = 1 - age;
+      ctx.strokeStyle = `hsla(${(hue + i * 9) % 360}, 95%, 58%, ${k * .85})`;
+      ctx.lineWidth = 1.5 + k * 7;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    for (const s of sparks) {
+      const age = (now - s.t) / 900; s.x += s.vx; s.y += s.vy;
+      ctx.fillStyle = `hsla(${(s.h + age * 120) % 360}, 95%, 60%, ${1 - age})`;
+      const r = s.r * (1 - age * .5);
+      ctx.beginPath(); for (let j = 0; j < 8; j++) { const ang = j * Math.PI / 4, rr = j % 2 ? r * .4 : r * 1.6; ctx.lineTo(s.x + Math.cos(ang) * rr, s.y + Math.sin(ang) * rr); } ctx.closePath(); ctx.fill();
+    }
+    raf = pts.length || sparks.length ? requestAnimationFrame(draw) : 0;
+  };
+  size(); addEventListener('resize', size); addEventListener('pointermove', move, { passive: true });
+  trail = { stop() { cancelAnimationFrame(raf); removeEventListener('resize', size); removeEventListener('pointermove', move); c.remove(); trail = null; } };
+}
+
+// ---------- interactive polish: sounds for windows, ripples, page transitions, map picks ----------
+let interactions = false;
+function startInteractions() {
+  if (interactions) return; interactions = true;
+  // windows (modals) and messages (toasts)
+  new MutationObserver(muts => {
+    for (const m of muts) {
+      for (const n of m.addedNodes) {
+        if (!(n instanceof HTMLElement)) continue;
+        if (n.classList.contains('scrim')) sfx(soundForTitle(n.querySelector('.modal header h2')?.textContent || ''));
+        else if (n.classList.contains('toast')) {
+          if (n.classList.contains('err')) sfx('error');
+          else if (/تم|✓|أُعيد|نجاح/.test(n.textContent)) sfx('success');
+        }
+      }
+      for (const n of m.removedNodes) if (n instanceof HTMLElement && n.classList.contains('scrim')) sfx('close');
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+  // button ripple
+  document.addEventListener('pointerdown', e => {
+    const b = e.target.closest?.('.btn, .tabs button, .seg button, .fx-toggle');
+    if (!b || reduced) return;
+    const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 1.6;
+    const s = el('span', 'fx-ripple'); s.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+    if (getComputedStyle(b).position === 'static') b.style.position = 'relative';
+    b.style.overflow = 'hidden'; b.append(s); setTimeout(() => s.remove(), 650);
+    if (b.matches('.tabs button, .seg button')) sfx('click');
+  }, { passive: true });
+  // page change
+  addEventListener('hashchange', () => {
+    sfx('nav');
+    const v = document.getElementById('view'); if (!v || reduced) return;
+    v.classList.remove('fx-enter'); void v.offsetWidth; v.classList.add('fx-enter');
+  });
+  // picking a kiosk on any map
+  document.addEventListener('pointerup', e => {
+    const k = e.target.closest?.('.mapbox .k'); if (!k) return;
+    const fill = k.querySelector('.shape')?.getAttribute('fill') || '';
+    sfx('pick', !/c0392b|e67e22|9e9e9e/i.test(fill));
+    if (festiveOn() && !reduced) burst(e.clientX, e.clientY, 10);
+  });
+  // stat cards follow the pointer with a soft tilt
+  document.addEventListener('pointermove', e => {
+    const card = e.target.closest?.('.stat, .fx-cell'); if (!card || reduced) return;
+    const r = card.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+    card.style.transform = `perspective(600px) rotateX(${-y * 6}deg) rotateY(${x * 8}deg) translateY(-3px)`;
+    card.style.setProperty('--mx', (x + .5) * 100 + '%'); card.style.setProperty('--my', (y + .5) * 100 + '%');
+    card.onpointerleave = () => { card.style.transform = ''; };
+  }, { passive: true });
+}
+
+// ---------- toggles ----------
 export function toggleButton(cls = '') {
   const b = el('button', 'fx-toggle ' + cls); b.type = 'button';
   const paint = () => { const on = festiveOn(); b.textContent = on ? '❄ الزينة: تعمل' : '❄ الزينة: متوقفة'; b.setAttribute('aria-pressed', on); document.documentElement.classList.toggle('fx-off', !on); };
-  b.onclick = () => { store.set(festiveOn() ? 'off' : 'on'); paint(); if (festiveOn()) { startSnow(document.documentElement.dataset.snow || 40); celebrate(); } else { snow?.stop(); stopMusic(); try { speechSynthesis.cancel(); } catch {} } };
+  b.onclick = () => { store.set(festiveOn() ? 'off' : 'on'); paint(); if (festiveOn()) { startSnow(document.documentElement.dataset.snow || 40); startTrail(); celebrate(); } else { snow?.stop(); trail?.stop(); stopMusic(); try { speechSynthesis.cancel(); } catch {} } };
+  paint();
+  return b;
+}
+export function soundButton(cls = '') {
+  const b = el('button', 'fx-toggle ' + cls); b.type = 'button';
+  const paint = () => { const on = soundOn(); b.textContent = on ? '🔔 الأصوات: تعمل' : '🔕 الأصوات: متوقفة'; b.setAttribute('aria-pressed', on); };
+  b.onclick = () => { sstore.set(soundOn() ? 'off' : 'on'); paint(); if (soundOn()) sfx('success'); else { stopMusic(); try { speechSynthesis.cancel(); } catch {} } };
   paint();
   return b;
 }
@@ -351,4 +502,6 @@ export function initFestive({ density = 40 } = {}) {
   document.documentElement.dataset.snow = density;
   document.documentElement.classList.toggle('fx-off', !festiveOn());
   startSnow(density);
+  startTrail();
+  startInteractions();
 }

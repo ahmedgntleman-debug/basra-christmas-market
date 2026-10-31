@@ -8,6 +8,7 @@ export function setLang(l) { try { localStorage.setItem('bcm.lang', l); } catch 
 export const isEn = () => LANG === 'en';
 
 const D = {
+  '🔔 الأصوات: تعمل': '🔔 Sounds: on', '🔕 الأصوات: متوقفة': '🔕 Sounds: off', 'الأصوات': 'Sounds', 'الزينة': 'Decorations',
   '＋ عدد الزوار': '＋ Visitors', 'عدد الزوار': 'visitors', 'متابعة': 'Continue', 'التاريخ مضبوط على اليوم، ويمكنك تغييره قبل المتابعة.': 'The date is set to today; you can change it before continuing.', 'أمس': 'Yesterday', 'يوم الافتتاح': 'Opening day', 'آخر يوم': 'Last day', ' · قبل الافتتاح': ' · before opening', ' · بعد انتهاء المهرجان': ' · after the festival',
   '✎ تغيير رقم الكشك': '✎ Change kiosk number', 'الرقم الجديد': 'New number', 'حفظ الرقم الجديد': 'Save new number', 'يتغير الرقم على الخريطة وفي الحجوزات والتقارير وصفحة الزوار فوراً.': 'The number changes on the map, bookings, reports and the public page right away.',
   'اكتب auto ليختار النظام أحدث نموذج متاح تلقائياً، حتى لو أوقفت Google نموذجاً قديماً.': 'Type auto to let the system pick the newest available model, even when Google retires an old one.',
