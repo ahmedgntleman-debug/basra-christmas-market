@@ -5,7 +5,7 @@ import {
 } from './common.js';
 import { S, can, refresh, settings, colors, kioskById, codeSort, loadEditions, switchEdition, DEFAULT_CONTRACT, DEFAULT_SPONSOR_CONTRACT } from './state.js';
 import { openBooking, openReservation, openPayment, openCustomer, field, DEAL_LABEL } from './booking.js';
-import { listModels } from './assistant.js';
+import { listModels, pickModel } from './assistant.js';
 
 const numCell = (v, unknown = '—') => h('td', { class: 'money' }, v == null ? h('span', { class: 'hint' }, unknown) : h('span', { class: 'num' }, fmtNum(v)));
 
@@ -618,7 +618,7 @@ function assistantSection(sec, E, saveEdition) {
   const cfg = settings();
   const on = h('input', { type: 'checkbox', checked: cfg.assistant });
   const key = h('input', { class: 'in', type: 'password', dir: 'ltr', value: cfg.gemini_key || '', placeholder: 'AIza…', autocomplete: 'off' });
-  const model = h('input', { class: 'in', dir: 'ltr', value: cfg.gemini_model || 'gemini-2.5-flash', list: 'gem-models' });
+  const model = h('input', { class: 'in', dir: 'ltr', value: cfg.gemini_model || 'auto', list: 'gem-models' });
   const dl = h('datalist', { id: 'gem-models' });
   const out = h('span', { class: 'hint' });
   const test = h('button', { class: 'btn small', onclick: async () => {
@@ -628,15 +628,16 @@ function assistantSection(sec, E, saveEdition) {
       const ms = await listModels(key.value.trim());
       dl.replaceChildren(...ms.map(m => h('option', { value: m })));
       const flash = ms.filter(m => /flash/.test(m));
-      out.textContent = `المفتاح يعمل ✓ — ${ms.length} نموذج متاح. اختر نموذجاً من القائمة (يُفضّل flash).`;
-      if (!ms.includes(model.value) && flash.length) model.value = flash.find(m => !/lite|preview|exp|tts|image|live/.test(m)) || flash[0];
+      void flash;
+      if (model.value.trim() !== 'auto' && !ms.includes(model.value.trim())) model.value = 'auto';
+      out.textContent = `المفتاح يعمل ✓ — ${ms.length} نموذج متاح. الاختيار التلقائي سيستخدم: ${pickModel(ms) || '—'}`;
     } catch (e) { out.textContent = 'المفتاح لا يعمل: ' + e.message; }
   } }, 'فحص المفتاح');
-  const save = h('button', { class: 'btn primary', onclick: () => saveEdition({ settings: { ...(E.settings || {}), assistant: on.checked, gemini_key: key.value.trim() || null, gemini_model: model.value.trim() || 'gemini-2.5-flash' } }, 'تم حفظ إعدادات المساعد') }, 'حفظ');
+  const save = h('button', { class: 'btn primary', onclick: () => saveEdition({ settings: { ...(E.settings || {}), assistant: on.checked, gemini_key: key.value.trim() || null, gemini_model: model.value.trim() || 'auto' } }, 'تم حفظ إعدادات المساعد') }, 'حفظ');
   return sec('المساعد الذكي (اختياري)',
     h('p', { class: 'hint', style: { margin: 0 } }, 'يفهم الأوامر المكتوبة بالعربية مثل «احجز الكشك A1 لشركة بيبسي…» ويعرض المعاينة قبل التنفيذ. يحتاج مفتاح Google Gemini مجاني من aistudio.google.com ← Get API key. بدون المفتاح يعمل النظام بشكل طبيعي.'),
     h('label', { class: 'check' }, on, 'تفعيل المساعد الذكي'),
-    h('div', { class: 'grid2' }, field('مفتاح Gemini API', key), field('النموذج', h('div', {}, model, dl))),
+    h('div', { class: 'grid2' }, field('مفتاح Gemini API', key), field('النموذج', h('div', {}, model, dl, h('span', { class: 'hint' }, 'اكتب auto ليختار النظام أحدث نموذج متاح تلقائياً، حتى لو أوقفت Google نموذجاً قديماً.')))),
     h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } }, save, test, out),
     h('p', { class: 'warnbox' }, 'المفتاح يُحفظ في قاعدة البيانات ويراه الموظفون المسجلون فقط. مع المفتاح المجاني قد تستخدم Google النصوص المرسلة لتحسين خدماتها؛ تُرسل أسماء العملاء وأرقام الأكشاك والمبالغ فقط، ولا تُرسل أرقام الهواتف إلا إذا كتبتها في الطلب.'));
 }

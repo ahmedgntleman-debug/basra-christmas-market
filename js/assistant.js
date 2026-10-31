@@ -48,6 +48,7 @@ const SYSTEM = ctx => `أنت مساعد حجوزات لإدارة مهرجان 
 - move_kiosks: {"reservation_ref":"R2", "remove":["A1"], "add":["A2"]}
 - add_note: {"reservation_ref":"R2", "note":"..."}
 - set_deadline: {"reservation_ref":"R2", "date":"YYYY-MM-DD"}
+- set_deadline_all: {"date":"YYYY-MM-DD", "group":"A أو null"} — موعد تسديد واحد لكل الحجوزات التي عليها مبالغ متبقية (غير المدفوعة بالكامل)، أو لمجموعة أكشاك معينة.
 - cancel_reservation: {"reservation_ref":"R2", "reason":null}
 - query: {"type":"outstanding|overdue|available|reservations|customer", "group":"A أو null", "customer_ref":null, "from":null, "to":null}
 - clarify: استخدمه عندما تنقص معلومة ضرورية أو يوجد أكثر من احتمال.
@@ -59,11 +60,38 @@ const SYSTEM = ctx => `أنت مساعد حجوزات لإدارة مهرجان 
 4. "الباقي بعد أسبوع" تعني payment_deadline = اليوم + 7 أيام. "يوم الخميس" تعني أقرب خميس قادم.
 5. للإشارة إلى حجز موجود استخدم ref من قائمة الحجوزات فقط. إذا تطابق أكثر من حجز (مثلاً لنفس الشركة)، استخدم clarify واذكر الخيارات.
 6. إذا كان اسم الشركة يطابق عميلاً موجوداً (حتى مع اختلاف بسيط مثل "شركة بيبسي" و"بيبسي")، استخدم customer_ref.
-7. لا تضع أي نص خارج JSON.`;
+7. التواريخ المكتوبة بالأرقام تُقرأ يوم/شهر/سنة كما في العراق: "10/11/2026" أو "10\\11\\2026" = 2026-11-10.
+8. لا تضع أي نص خارج JSON.`;
 
+// Google retires models from time to time; pick the newest working "flash" model automatically.
+let liveModel = null;
+export function pickModel(list) {
+  const ver = n => { const m = /^gemini-(\d+(?:\.\d+)?)-flash$/.exec(n); return m ? +m[1] : -1; };
+  const plain = list.filter(n => ver(n) >= 0).sort((a, b) => ver(b) - ver(a));
+  if (plain.length) return plain[0];
+  const flash = list.filter(n => /flash/.test(n) && !/lite|image|tts|live|audio|embedding|thinking|exp/.test(n)).sort().reverse();
+  return flash[0] || list.find(n => /^gemini/.test(n)) || null;
+}
+const retired = msg => /no longer available|not found|is not supported|deprecated|update your code|does not exist|unknown model/i.test(msg || '');
 async function callGemini(history, ctx) {
   const cfg = settings();
-  const res = await fetch(ENDPOINT(cfg.gemini_model || 'gemini-2.5-flash', cfg.gemini_key), {
+  let model = liveModel || (cfg.gemini_model && cfg.gemini_model !== 'auto' ? cfg.gemini_model : null);
+  if (!model) { model = pickModel(await listModels(cfg.gemini_key)); liveModel = model; }
+  try { return await askModel(model, history, ctx, cfg.gemini_key); }
+  catch (e) {
+    if (!retired(e.message) && e.status !== 404) throw e;
+    const next = pickModel((await listModels(cfg.gemini_key)).filter(n => n !== model));
+    if (!next) throw e;
+    liveModel = next;
+    if (can.admin()) {
+      const E = S.edition;
+      sb.from('editions').update({ settings: { ...(E.settings || {}), gemini_model: next } }).eq('id', E.id).then(({ error }) => { if (!error) E.settings = { ...(E.settings || {}), gemini_model: next }; });
+    }
+    return await askModel(next, history, ctx, cfg.gemini_key);
+  }
+}
+async function askModel(model, history, ctx, key) {
+  const res = await fetch(ENDPOINT(model, key), {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM(ctx) }] },
@@ -72,7 +100,7 @@ async function callGemini(history, ctx) {
     }),
   });
   const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(j?.error?.message ? 'خطأ من خدمة الذكاء الاصطناعي: ' + j.error.message : 'تعذر الاتصال بخدمة الذكاء الاصطناعي');
+  if (!res.ok) { const er = new Error(j?.error?.message ? 'خطأ من خدمة الذكاء الاصطناعي: ' + j.error.message : 'تعذر الاتصال بخدمة الذكاء الاصطناعي'); er.status = res.status; throw er; }
   const text = j?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
   const clean = text.replace(/^```(json)?|```$/g, '').trim();
   try { return { raw: text, out: JSON.parse(clean) }; } catch { throw new Error('لم أفهم رد المساعد. أعد صياغة الطلب.'); }
@@ -175,6 +203,18 @@ function resolve(out, ctx) {
       if (r) A.lines = [['الحجز', `${r.customer_name || 'مؤقت'} — ${r.kiosk_codes.join('، ')}`], ['موعد التسديد الجديد', isDate(p.date) ? fmtDateLong(p.date) : '—']];
       break;
     }
+    case 'set_deadline_all': {
+      if (!isDate(p.date)) errors.push('التاريخ غير محدد.');
+      if (!can.book()) errors.push('ليس لديك صلاحية تعديل الحجوزات.');
+      const targets = S.reservations.filter(r => r.status !== 'cancelled' && !r.hold_expired && r.remaining > 0 &&
+        (!p.group || r.kiosk_ids.some(id => kioskById(id)?.grp === p.group)));
+      if (!targets.length) errors.push('لا توجد حجوزات عليها مبالغ متبقية.');
+      Object.assign(A, { targets });
+      A.lines = [['آخر موعد للتسديد', isDate(p.date) ? fmtDateLong(p.date) : '—'],
+        ['عدد الحجوزات', `${targets.length} حجز${p.group ? ' في أكشاك ' + p.group : ''}، مجموع المتبقي ${money(targets.reduce((a, r) => a + r.remaining, 0))}`],
+        ['الجهات', targets.map(r => `${r.customer_name || 'مؤقت'} (${r.kiosk_codes.join('، ')})`).join('، ')]];
+      break;
+    }
     case 'cancel_reservation': {
       const r = needRes();
       if (!can.book()) errors.push('ليس لديك صلاحية إلغاء الحجز.');
@@ -211,6 +251,8 @@ async function execute(A) {
     ({ error: err } = await sb.from('reservations').update({ notes }).eq('id', A.r.id)); openId = A.r.id;
   } else if (A.type === 'set_deadline') {
     ({ error: err } = await sb.from('reservations').update({ payment_deadline: p.date }).eq('id', A.r.id)); openId = A.r.id;
+  } else if (A.type === 'set_deadline_all') {
+    ({ error: err } = await sb.from('reservations').update({ payment_deadline: p.date }).in('id', A.targets.map(r => r.id)));
   } else if (A.type === 'cancel_reservation') {
     ({ error: err } = await sb.from('reservations').update({ status: 'cancelled', cancel_reason: p.reason || 'أُلغي عبر المساعد' }).eq('id', A.r.id)); openId = A.r.id;
   }
@@ -317,5 +359,5 @@ export function openAssistant() {
 }
 const TITLE = {
   create_reservation: 'حجز جديد — هل تؤكد؟', add_payment: 'إضافة دفعة — هل تؤكد؟', update_price: 'تغيير السعر — هل تؤكد؟',
-  move_kiosks: 'نقل / تغيير الأكشاك — هل تؤكد؟', add_note: 'إضافة ملاحظة — هل تؤكد؟', set_deadline: 'تعديل موعد التسديد — هل تؤكد؟', cancel_reservation: 'إلغاء الحجز — هل تؤكد؟',
+  move_kiosks: 'نقل / تغيير الأكشاك — هل تؤكد؟', add_note: 'إضافة ملاحظة — هل تؤكد؟', set_deadline: 'تعديل موعد التسديد — هل تؤكد؟', set_deadline_all: 'موعد تسديد لكل الحجوزات غير المدفوعة — هل تؤكد؟', cancel_reservation: 'إلغاء الحجز — هل تؤكد؟',
 };

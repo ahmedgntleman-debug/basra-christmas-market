@@ -35,7 +35,7 @@ export const settings = () => ({
   contract_prompt: 'ask',          // ask | always | never
   show_analytics: true,
   receipts: true, extended_customer: true, advanced_reports: true,
-  assistant: false, gemini_model: 'gemini-2.5-flash',
+  assistant: false, gemini_model: 'auto',
   contract_template: DEFAULT_CONTRACT,
   sponsor_template: DEFAULT_SPONSOR_CONTRACT,
   ...(S.edition?.settings || {}),
