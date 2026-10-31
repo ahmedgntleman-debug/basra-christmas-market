@@ -8,6 +8,7 @@ export function setLang(l) { try { localStorage.setItem('bcm.lang', l); } catch 
 export const isEn = () => LANG === 'en';
 
 const D = {
+  '✎ تغيير رقم الكشك': '✎ Change kiosk number', 'الرقم الجديد': 'New number', 'حفظ الرقم الجديد': 'Save new number', 'يتغير الرقم على الخريطة وفي الحجوزات والتقارير وصفحة الزوار فوراً.': 'The number changes on the map, bookings, reports and the public page right away.',
   'اكتب auto ليختار النظام أحدث نموذج متاح تلقائياً، حتى لو أوقفت Google نموذجاً قديماً.': 'Type auto to let the system pick the newest available model, even when Google retires an old one.',
   'موعد تسديد لكل الحجوزات غير المدفوعة — هل تؤكد؟': 'One payment deadline for all unpaid bookings — confirm?', 'آخر موعد للتسديد': 'Payment deadline', 'عدد الحجوزات': 'Bookings', 'الجهات': 'Customers',
   '↺ إعادة الكشك للحجز': '↺ Make bookable again',
@@ -307,6 +308,9 @@ const P = [
   [/^أُعيد الكشك (\S+) وأصبح متاحاً للحجز$/, 'Kiosk $1 is bookable again'],
   [/^أصبح الكشك (\S+) غير متاح$/, 'Kiosk $1 is now unavailable'],
   [/^المفتاح يعمل ✓ — (\d+) نموذج متاح\. الاختيار التلقائي سيستخدم: (.+)$/, 'Key works ✓ — $1 models available. Auto will use: $2'],
+  [/^تغيير رقم الكشك (\S+)$/, 'Change number of kiosk $1'],
+  [/^تم تغيير رقم الكشك من (\S+) إلى (\S+)$/, 'Kiosk number changed from $1 to $2'],
+  [/^أُعيد الرقم (\S+)$/, 'Number $1 restored'],
   [/^🎄 المهرجان قائم الآن — اليوم (\d+) من (\d+)$/, '🎄 The festival is on — day $1 of $2'],
   [/^(\d+) كشك بحاجة لتأكيد الرقم: (.*)$/, '$1 kiosk(s) need number verification: $2'],
   [/^(\d+) أكشاك محددة$/, '$1 kiosks selected'],

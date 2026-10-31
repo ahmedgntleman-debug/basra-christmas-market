@@ -390,6 +390,45 @@ function pageMap(root) {
   if (addBtn) addBtn.onclick = () => setTool(tool === 'add' ? '' : 'add');
   if (delBtn) delBtn.onclick = () => setTool(tool === 'del' ? '' : 'del');
   if (swapBtn) swapBtn.onclick = () => setTool(tool === 'swap' ? '' : 'swap');
+  // ----- rename a kiosk -----
+  function renameKiosk(k) {
+    const inp = h('input', { class: 'in', dir: 'ltr', value: k.code, style: { fontSize: '20px', fontWeight: '700', textAlign: 'center' } });
+    const prefix = c => (/^[A-Za-z]+/.exec(c) || [''])[0].toUpperCase();
+    const grp = h('input', { class: 'in', dir: 'ltr', value: k.grp || '' });
+    const note = h('p', { class: 'hint', style: { margin: 0 } });
+    const live = S.reservations.filter(r => r.status !== 'cancelled' && r.kiosk_ids.includes(k.id));
+    inp.oninput = () => {
+      const c = inp.value.trim().toUpperCase().replace(/\s+/g, '');
+      if (prefix(c) && prefix(k.code) === (k.grp || '') && prefix(c) !== prefix(k.code)) grp.value = prefix(c);
+      const other = c && c !== k.code && kioskByCode(c);
+      note.textContent = other ? `الرقم ${c} مستخدم لكشك آخر. اختر رقماً غيره، أو استخدم «تبديل كشكين» إن أردت تبادل المكانين.` : '';
+      note.style.color = other ? 'var(--bad)' : '';
+    };
+    const ok = h('button', { class: 'btn primary' }, 'حفظ الرقم الجديد');
+    const md = modal({ title: 'تغيير رقم الكشك ' + k.code, body: [
+      h('div', { class: 'grid2' }, field('الرقم الجديد', inp), field('المجموعة', grp)), note,
+      live.length ? h('p', { class: 'warnbox' }, `على هذا الكشك ${live.length} حجز (${live.map(r => r.customer_name || 'حجز مؤقت').join('، ')}). الحجوزات والدفعات تبقى كما هي وتظهر بالرقم الجديد. العقود المطبوعة سابقاً تبقى بالرقم القديم.`) : null,
+      h('p', { class: 'hint', style: { margin: 0 } }, 'يتغير الرقم على الخريطة وفي الحجوزات والتقارير وصفحة الزوار فوراً.')],
+      footer: [ok, h('button', { class: 'btn', onclick: () => md.close() }, 'إلغاء')] });
+    setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') ok.click(); });
+    ok.onclick = async () => {
+      const c = inp.value.trim().toUpperCase().replace(/\s+/g, '');
+      if (!c) return toast('اكتب رقم الكشك', { error: true });
+      if (c === k.code && (grp.value.trim() || null) === (k.grp || null)) return md.close();
+      if (c !== k.code && kioskByCode(c)) return toast('الرقم ' + c + ' مستخدم لكشك آخر', { error: true });
+      ok.disabled = true;
+      const old = k.code;
+      const { error } = await sb.from('kiosks').update({ code: c, grp: grp.value.trim().toUpperCase() || null, needs_verify: false }).eq('id', k.id);
+      ok.disabled = false;
+      if (error) return toast(/duplicate|unique/i.test(error.message) ? 'الرقم ' + c + ' مستخدم لكشك آخر' : errText(error), { error: true });
+      md.close(); await refresh();
+      toast(`تم تغيير رقم الكشك من ${old} إلى ${c}`, { actions: [{ label: 'تراجع', run: async () => {
+        const { error: e2 } = await sb.from('kiosks').update({ code: old, grp: k.grp }).eq('id', k.id);
+        if (e2) return toast(errText(e2), { error: true }); await refresh(); toast('أُعيد الرقم ' + old);
+      } }] });
+    };
+  }
   // ----- switch two kiosks -----
   function startSwap(k) { setTool('swap'); pickSwap(k); }
   function pickSwap(k) {
@@ -621,6 +660,7 @@ function pageMap(root) {
         to: firstGap.e < to ? firstGap.e : to >= firstGap.s && to <= firstGap.e ? to : firstGap.e,
       }) }, 'حجز هذا الكشك') : null,
       can.book() ? h('button', { class: 'btn', onclick: () => startSwap(k) }, '⇄ تبديل مع كشك آخر') : null,
+      can.admin() ? h('button', { class: 'btn', onclick: () => renameKiosk(k) }, '✎ تغيير رقم الكشك') : null,
       s === 'partial' ? h('p', { class: 'hint', style: { margin: 0 } }, 'محجوز لجزء من الفترة المعروضة فقط، وباقي الأيام متاحة للحجز.') : null,
       gaps.length && live.length ? h('div', { class: 'hint' }, 'أيام متوفرة: ', gaps.map(g => g.s === g.e ? fmtDate(g.s) : `${fmtDate(g.s)}–${fmtDate(g.e)}`).join('، ')) : null,
       !k.active || !k.rentable ? h('div', { class: 'warnbox disabled-box' },
