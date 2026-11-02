@@ -128,41 +128,54 @@ function customerPicker(initialId) {
 }
 
 // ---------- NEW RESERVATION ----------
-export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
+// new booking, or (edit = reservation id) the same form filled with the booking so anything can be changed
+export function openBooking({ kioskIds = [], customerId, from, to, edit = null, confirm = false } = {}) {
   if (!can.book()) return toast('ليس لديك صلاحية إنشاء حجز', { error: true });
   const E = S.edition;
+  const R0 = edit ? S.reservations.find(x => x.id === edit) : null;
+  if (edit && !R0) return toast('لم يتم العثور على الحجز', { error: true });
+  if (R0) { kioskIds = [...R0.kiosk_ids]; customerId = R0.customer_id; from = R0.start_date; to = R0.end_date; }
   const kp = kioskPicker(kioskIds);
   const cp = customerPicker(customerId);
   const start = h('input', { class: 'in', type: 'date', value: from || E.start_date });
   const end = h('input', { class: 'in', type: 'date', value: to || E.end_date });
   const daysOut = h('span', { class: 'hint' });
   const warn = h('div', { class: 'hint', style: { color: 'var(--bad)', fontWeight: 500 } });
-  let status = 'confirmed';
-  const holdSel = h('select', { class: 'in' }, [['24', '24 ساعة'], ['48', '48 ساعة'], ['72', '3 أيام'], ['168', 'أسبوع'], ['', 'بدون انتهاء']].map(([v, l]) => h('option', { value: v }, l)));
-  holdSel.value = '48';
+  let status = R0 ? (confirm ? 'confirmed' : R0.status) : 'confirmed';
+  const holdSel = h('select', { class: 'in' }, [...(R0?.status === 'held' ? [['keep', R0.hold_until ? 'كما هو (حتى ' + fmtDateTime(R0.hold_until) + ')' : 'كما هو (بدون انتهاء)']] : []),
+    ['24', '24 ساعة'], ['48', '48 ساعة'], ['72', '3 أيام'], ['168', 'أسبوع'], ['', 'بدون انتهاء']].map(([v, l]) => h('option', { value: v }, l)));
+  holdSel.value = R0?.status === 'held' ? 'keep' : '48';
   const holdRow = field('ينتهي الحجز المؤقت بعد', holdSel, h('span', { class: 'hint' }, 'إذا لم يُؤكَّد يُحرَّر الكشك تلقائياً'));
-  holdRow.hidden = true;
+  holdRow.hidden = status !== 'held';
   const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'نوع الحجز' },
-    h('button', { type: 'button', 'aria-pressed': 'true', onclick: e => setStatus('confirmed', e) }, 'حجز مؤكد'),
-    h('button', { type: 'button', 'aria-pressed': 'false', onclick: e => setStatus('held', e) }, 'حجز مؤقت'));
+    h('button', { type: 'button', 'aria-pressed': String(status === 'confirmed'), onclick: e => setStatus('confirmed', e) }, 'حجز مؤكد'),
+    h('button', { type: 'button', 'aria-pressed': String(status === 'held'), onclick: e => setStatus('held', e) }, 'حجز مؤقت'));
   function setStatus(v, e) { status = v; $$('button', seg).forEach(b => b.setAttribute('aria-pressed', b === e.currentTarget)); holdRow.hidden = v !== 'held'; }
 
-  let deal = kioskIds.length && kioskIds.every(id => kioskById(id)?.grp === 'S') ? 'sponsorship' : 'rental';
+  let deal = R0 ? (R0.deal_type || 'rental') : kioskIds.length && kioskIds.every(id => kioskById(id)?.grp === 'S') ? 'sponsorship' : 'rental';
   const priceLabel = h('span', {});
   const dealSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'نوع الاتفاق' },
     h('button', { type: 'button', 'aria-pressed': String(deal === 'rental'), onclick: e => setDeal('rental', e) }, 'إيجار كشك'),
     h('button', { type: 'button', 'aria-pressed': String(deal === 'sponsorship'), onclick: e => setDeal('sponsorship', e) }, 'رعاية'));
   function setDeal(v, e) { deal = v; $$('button', dealSeg).forEach(b => b.setAttribute('aria-pressed', b === e.currentTarget)); priceLabel.textContent = v === 'sponsorship' ? 'قيمة الرعاية المتفق عليها' : 'مبلغ الإيجار المتفق عليه'; }
   priceLabel.textContent = deal === 'sponsorship' ? 'قيمة الرعاية المتفق عليها' : 'مبلغ الإيجار المتفق عليه';
-  const price = amountInput('price');
+  const price = amountInput('price', R0?.agreed_amount);
   const price_ = price.inp;
-  const discount = amountInput('discount', null, { placeholder: '0' });
-  const extra = amountInput('extra', null, { placeholder: '0' });
-  const pay = amountInput('pay');
+  const discount = amountInput('discount', R0?.discount || null, { placeholder: '0' });
+  const extra = amountInput('extra', R0?.extra_charges || null, { placeholder: '0' });
+  const pay = amountInput('pay', R0 ? R0.paid : null, { placeholder: R0 ? '0' : undefined });
+  if (R0 && !can.pay()) { pay.inp.disabled = true; pay.inp.title = 'تعديل المدفوع يحتاج صلاحية الدفعات'; }
   const method = h('select', { class: 'in' }, METHODS.map(m => h('option', {}, m)));
-  const deadline = h('input', { class: 'in', type: 'date' });
-  const notes = h('textarea', { class: 'in', placeholder: 'ملاحظات (اختياري)' });
-  const guests = h('input', { class: 'in', type: 'number', min: 0, inputmode: 'numeric', placeholder: 'اختياري' });
+  const deadline = h('input', { class: 'in', type: 'date', value: R0?.payment_deadline || '' });
+  const notes = h('textarea', { class: 'in', placeholder: 'ملاحظات (اختياري)' }, R0?.notes || '');
+  const guests = h('input', { class: 'in', type: 'number', min: 0, inputmode: 'numeric', placeholder: 'اختياري', value: R0?.guests ?? '' });
+  if (R0?.guests != null) guests.dataset.touched = '1';
+  const payDiff = h('span', { class: 'hint' });
+  if (R0) pay.inp.addEventListener('input', () => {
+    const v = pay.get(), d = Number.isNaN(v) ? 0 : (v || 0) - R0.paid;
+    payDiff.textContent = !d ? '' : d > 0 ? `سيُسجَّل دفعة جديدة بـ ${money(d)}` : `سيُسجَّل تصحيح بـ ${money(-d)} (إنقاص المدفوع)`;
+  });
+  if (R0) deal === 'sponsorship' && (priceLabel.textContent = 'قيمة الرعاية المتفق عليها');
   const capOut = h('span', { class: 'hint' });
   const capTotal = () => kp.ids.reduce((a, id) => a + (kioskById(id)?.capacity || 0), 0);
   const recap = () => {
@@ -187,7 +200,7 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
     recap(); rezone();
     const ok = start.value && end.value && end.value >= start.value;
     daysOut.textContent = ok ? `${daysBetween(start.value, end.value)} يوماً` : 'تاريخ النهاية قبل البداية';
-    const c = ok ? conflicts(kp.ids, start.value, end.value) : [];
+    const c = ok ? conflicts(kp.ids, start.value, end.value, R0?.id) : [];
     warn.textContent = c.length ? 'محجوز في هذه الفترة: ' + [...new Set(c.map(x => `${x.kiosk} (${x.r.customer_name || 'حجز مؤقت'} ${fmtDate(x.r.start_date)}–${fmtDate(x.r.end_date)})`))].join('، ') : '';
   };
   kp.onChange(recheck); start.addEventListener('change', recheck); end.addEventListener('change', recheck);
@@ -205,10 +218,13 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
     h('label', { class: 'f' }, priceLabel, price.inp, h('span', {}, price.out, h('span', { class: 'hint' }, ' — اتركه فارغاً إذا لم يُتفق على السعر بعد')), zoneOut),
     h('details', {}, h('summary', { class: 'hint', style: { cursor: 'pointer' } }, 'خصم أو رسوم إضافية'),
       h('div', { class: 'grid2', style: { marginTop: '10px' } }, field('خصم', discount.inp, discount.out), field('رسوم إضافية', extra.inp, extra.out))),
-    h('div', { class: 'grid3' }, field('دفعة أولى (اختياري)', pay.inp, pay.out), field('طريقة الدفع', method), field('موعد تسديد المتبقي', deadline)),
+    h('div', { class: 'grid3' }, field(R0 ? 'المبلغ المدفوع (المجموع)' : 'دفعة أولى (اختياري)', pay.inp, h('span', {}, pay.out, ' ', payDiff)), field('طريقة الدفع', method), field('موعد تسديد المتبقي', deadline)),
+    R0 && (R0.discount || R0.extra_charges) ? null : null,
     notes);
+  if (R0 && (R0.discount || R0.extra_charges)) form.querySelector('details').open = true;
+  if (R0) save.textContent = 'حفظ التعديلات';
 
-  const m = modal({ title: 'حجز جديد', body: form, footer: [save, h('button', { class: 'btn', type: 'button', onclick: () => m.close() }, 'إلغاء')] });
+  const m = modal({ title: R0 ? 'تعديل الحجز — ' + R0.kiosk_codes.join('، ') : 'حجز جديد', body: form, footer: [save, h('button', { class: 'btn', type: 'button', onclick: () => m.close() }, 'إلغاء')] });
   save.setAttribute('form', ''); save.addEventListener('click', submit);
   form.addEventListener('submit', submit);
 
@@ -221,6 +237,7 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
     if (!(end.value >= start.value)) return toast('تاريخ النهاية قبل تاريخ البداية', { error: true });
     for (const a of [price, discount, extra, pay]) if (Number.isNaN(a.get())) return toast('أحد المبالغ غير صالح', { error: true });
     if (pay.get() && price.get() == null) { /* allowed: payment before price is agreed */ }
+    if (R0) return saveEdit(cust);
     const p = {
       edition_id: E.id, kiosk_ids: kp.ids, start_date: start.value, end_date: end.value, status,
       hold_until: status === 'held' && holdSel.value ? new Date(Date.now() + holdSel.value * 3600e3).toISOString() : null,
@@ -236,6 +253,45 @@ export function openBooking({ kioskIds = [], customerId, from, to } = {}) {
     m.close();
     await refresh();
     afterSave(data, deal);
+  }
+
+  async function saveEdit(cust) {
+    const id = R0.id;
+    if (Number.isNaN(pay.get()) || (pay.get() || 0) < 0) return toast('المبلغ المدفوع غير صالح', { error: true });
+    save.disabled = true; save.textContent = 'جارٍ الحفظ…';
+    try {
+      let customer_id = cust.customer_id || null;
+      if (!customer_id && cust.new_customer) {
+        const { data, error } = await sb.from('customers').insert(clean(cust.new_customer)).select().single();
+        if (error) throw error;
+        customer_id = data.id;
+      }
+      if (status === 'confirmed' && !customer_id) throw new Error('الحجز المؤكد يحتاج اسم العميل');
+      const hold = status !== 'held' ? null : holdSel.value === 'keep' ? R0.hold_until : holdSel.value ? new Date(Date.now() + holdSel.value * 3600e3).toISOString() : null;
+      const upd = {
+        customer_id, start_date: start.value, end_date: end.value, status, hold_until: hold,
+        agreed_amount: price.get(), discount: discount.get() || 0, extra_charges: extra.get() || 0,
+        payment_deadline: deadline.value || null, notes: notes.value.trim() || null, deal_type: deal,
+        guests: guests.value === '' ? null : Math.max(0, Math.round(+guests.value)),
+      };
+      const sameK = kp.ids.length === R0.kiosk_ids.length && kp.ids.every(k => R0.kiosk_ids.includes(k));
+      // kiosks first when the dates stay; dates first when they change and kiosks stay
+      if (!sameK) { const { error } = await sb.rpc('set_reservation_kiosks', { p_res: id, p_kiosks: kp.ids }); if (error) throw error; }
+      const { error } = await sb.from('reservations').update(upd).eq('id', id);
+      if (error) throw error;
+      // paid total changed → keep the payment history: add a payment or a correction for the difference
+      const newPaid = pay.get() || 0, diff = newPaid - R0.paid;
+      if (diff && can.pay()) {
+        const { error: e2 } = await sb.from('payments').insert({ reservation_id: id, amount: diff, kind: diff > 0 ? 'payment' : 'correction', method: method.value,
+          note: `تعديل المبلغ المدفوع من ${fmtNum(R0.paid)} إلى ${fmtNum(newPaid)}` });
+        if (e2) throw e2;
+      }
+      m.close();
+      await refresh();
+      toast('تم حفظ تعديلات الحجز', { actions: [{ label: 'عرض الحجز', run: () => openReservation(id) }] });
+    } catch (e) {
+      toast(errText(e), { error: true });
+    } finally { save.disabled = false; save.textContent = 'حفظ التعديلات'; }
   }
 }
 
@@ -455,6 +511,9 @@ async function cancelRes(r, m) {
 
 // ---------- EDIT ----------
 export function openEditReservation(id, { confirm = false } = {}) {
+  return openBooking({ edit: id, confirm });
+}
+function openEditReservationOld(id, { confirm = false } = {}) {
   const r = S.reservations.find(x => x.id === id);
   const cp = customerPicker(r.customer_id);
   const start = h('input', { class: 'in', type: 'date', value: r.start_date });
